@@ -1,0 +1,178 @@
+// ============================================================
+// MoneyGuide — Zustand App Store
+// ============================================================
+import { create } from 'zustand';
+import type { ThemeName, AnalyticsPeriod, AnalyticsMode, User } from '../lib/types';
+import { getDatabase } from '../db/client';
+
+interface AppState {
+  // User Authentication
+  currentUser: User | null;
+  rememberMe: boolean;
+  login: (user: User, rememberMe: boolean) => void;
+  signOut: () => void;
+  setRememberMe: (remember: boolean) => void;
+
+  // Theme
+  theme: ThemeName;
+  setTheme: (theme: ThemeName) => void;
+
+  // App Lock (PIN & Biometrics)
+  isUnlocked: boolean;
+  pinHash: string;
+  biometricEnabled: boolean;
+  setUnlocked: (unlocked: boolean) => void;
+  setPinHash: (hash: string) => void;
+  setBiometricEnabled: (enabled: boolean) => void;
+
+  // Analytics period & mode
+  analyticsPeriod: AnalyticsPeriod;
+  setAnalyticsPeriod: (period: AnalyticsPeriod) => void;
+  analyticsMode: AnalyticsMode;
+  setAnalyticsMode: (mode: AnalyticsMode) => void;
+
+  // Database initialized
+  dbReady: boolean;
+  setDbReady: (ready: boolean) => void;
+
+  // Refresh trigger (increment to trigger re-fetch in hooks)
+  refreshKey: number;
+  triggerRefresh: () => void;
+
+  // Load preferences from database
+  loadPreferences: () => void;
+}
+
+export const useAppStore = create<AppState>((set, get) => ({
+  // User Authentication
+  currentUser: null,
+  rememberMe: true,
+
+  login: (user, rememberMe) => {
+    set({ currentUser: user, rememberMe });
+    try {
+      const db = getDatabase();
+      db.runSync(
+        "INSERT OR REPLACE INTO user_preferences (key, value) VALUES ('current_user_id', ?)",
+        user.id,
+      );
+      db.runSync(
+        "INSERT OR REPLACE INTO user_preferences (key, value) VALUES ('remember_me', ?)",
+        String(rememberMe),
+      );
+    } catch (e) {
+      console.error('Error saving login state:', e);
+    }
+  },
+
+  signOut: () => {
+    set({ currentUser: null, isUnlocked: true });
+    try {
+      const db = getDatabase();
+      db.runSync("DELETE FROM user_preferences WHERE key = 'current_user_id'");
+    } catch (e) {
+      console.error('Error signing out:', e);
+    }
+  },
+
+  setRememberMe: (remember) => {
+    set({ rememberMe: remember });
+    try {
+      const db = getDatabase();
+      db.runSync(
+        "INSERT OR REPLACE INTO user_preferences (key, value) VALUES ('remember_me', ?)",
+        String(remember),
+      );
+    } catch {}
+  },
+
+  // Theme
+  theme: 'dark',
+  setTheme: (theme) => {
+    set({ theme });
+    try {
+      const db = getDatabase();
+      db.runSync("INSERT OR REPLACE INTO user_preferences (key, value) VALUES ('theme', ?)", theme);
+    } catch {}
+  },
+
+  // Auth / App Lock
+  isUnlocked: true,
+  pinHash: '',
+  biometricEnabled: false,
+  setUnlocked: (unlocked) => set({ isUnlocked: unlocked }),
+  setPinHash: (hash) => {
+    set({ pinHash: hash });
+    try {
+      const db = getDatabase();
+      db.runSync("INSERT OR REPLACE INTO user_preferences (key, value) VALUES ('pin_hash', ?)", hash);
+    } catch {}
+  },
+  setBiometricEnabled: (enabled) => {
+    set({ biometricEnabled: enabled });
+    try {
+      const db = getDatabase();
+      db.runSync(
+        "INSERT OR REPLACE INTO user_preferences (key, value) VALUES ('biometric_enabled', ?)",
+        String(enabled),
+      );
+    } catch {}
+  },
+
+  // Analytics
+  analyticsPeriod: 'monthly',
+  setAnalyticsPeriod: (period) => set({ analyticsPeriod: period }),
+  analyticsMode: 'expense',
+  setAnalyticsMode: (mode) => set({ analyticsMode: mode }),
+
+  // Database
+  dbReady: false,
+  setDbReady: (ready) => set({ dbReady: ready }),
+
+  // Refresh
+  refreshKey: 0,
+  triggerRefresh: () => set((s) => ({ refreshKey: s.refreshKey + 1 })),
+
+  // Load preferences from DB
+  loadPreferences: () => {
+    try {
+      const db = getDatabase();
+      const rows = db.getAllSync<{ key: string; value: string }>(
+        'SELECT key, value FROM user_preferences',
+      );
+      const prefs: Record<string, string> = {};
+      rows.forEach((r) => {
+        prefs[r.key] = r.value;
+      });
+
+      const rememberMe = prefs.remember_me !== 'false'; // default true
+      let currentUser: User | null = null;
+
+      // Only restore user session if remember_me is true
+      if (rememberMe && prefs.current_user_id) {
+        const userRow = db.getFirstSync<User>(
+          'SELECT id, name, email, created_at, updated_at FROM users WHERE id = ?',
+          prefs.current_user_id,
+        );
+        if (userRow) {
+          currentUser = userRow;
+        }
+      }
+
+      set({
+        theme: (prefs.theme as ThemeName) || 'dark',
+        pinHash: prefs.pin_hash || '',
+        biometricEnabled: prefs.biometric_enabled === 'true',
+        rememberMe: rememberMe,
+        currentUser: currentUser,
+      });
+
+      // If user is authenticated and has a PIN configured, lock the app until PIN/Biometric is verified
+      if (prefs.pin_hash && currentUser) {
+        set({ isUnlocked: false });
+      }
+    } catch (e) {
+      console.error('Failed to load user preferences:', e);
+    }
+  },
+}));

@@ -1,10 +1,16 @@
-import { useFonts } from 'expo-font';
-import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
+// ============================================================
+// MoneyGuide — Root Layout
+// ============================================================
+import { useEffect, useState } from 'react';
+import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import { StatusBar } from 'expo-status-bar';
+import { initializeDatabase } from '../db/client';
+import { useAppStore } from '../stores/app-store';
+import { useTheme } from '../hooks/useTheme';
+import LockScreen from '../components/auth/LockScreen';
+import AuthScreen from '../components/auth/AuthScreen';
 import 'react-native-reanimated';
-
-import { useColorScheme } from '@/components/useColorScheme';
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -12,7 +18,6 @@ export {
 } from 'expo-router';
 
 export const unstable_settings = {
-  // Ensure that reloading on `/modal` keeps a back button present.
   initialRouteName: '(tabs)',
 };
 
@@ -20,37 +25,89 @@ export const unstable_settings = {
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  const [loaded, error] = useFonts({
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
-  });
-
-  // Expo Router uses Error Boundaries to catch errors in the navigation tree.
-  useEffect(() => {
-    if (error) throw error;
-  }, [error]);
+  const [ready, setReady] = useState(false);
+  const setDbReady = useAppStore((s) => s.setDbReady);
+  const loadPreferences = useAppStore((s) => s.loadPreferences);
+  const isUnlocked = useAppStore((s) => s.isUnlocked);
+  const currentUser = useAppStore((s) => s.currentUser);
+  const { colors } = useTheme();
 
   useEffect(() => {
-    if (loaded) {
-      SplashScreen.hideAsync();
+    async function init() {
+      try {
+        // Initialize database & seed defaults
+        initializeDatabase();
+        setDbReady(true);
+
+        // Load user preferences (theme, PIN, user session, etc.)
+        loadPreferences();
+      } catch (e) {
+        console.error('Failed to initialize:', e);
+      } finally {
+        setReady(true);
+        SplashScreen.hideAsync();
+      }
     }
-  }, [loaded]);
+    init();
+  }, []);
 
-  if (!loaded) {
+  if (!ready) {
     return null;
   }
 
-  return <RootLayoutNav />;
-}
+  // 1. User Authentication Guard
+  if (!currentUser) {
+    return (
+      <>
+        <StatusBar style={colors.statusBar} />
+        <AuthScreen />
+      </>
+    );
+  }
 
-function RootLayoutNav() {
-  const colorScheme = useColorScheme();
+  // 2. PIN / Biometric App Lock Guard
+  if (!isUnlocked) {
+    return (
+      <>
+        <StatusBar style={colors.statusBar} />
+        <LockScreen />
+      </>
+    );
+  }
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
+    <>
+      <StatusBar style={colors.statusBar} />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: colors.background },
+          animation: 'fade',
+        }}
+      >
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen
+          name="(modals)/category-picker"
+          options={{
+            presentation: 'modal',
+            animation: 'slide_from_bottom',
+          }}
+        />
+        <Stack.Screen
+          name="(modals)/expense-detail"
+          options={{
+            presentation: 'modal',
+            animation: 'slide_from_bottom',
+          }}
+        />
+        <Stack.Screen
+          name="(modals)/receipt-viewer"
+          options={{
+            presentation: 'fullScreenModal',
+            animation: 'fade',
+          }}
+        />
       </Stack>
-    </ThemeProvider>
+    </>
   );
 }

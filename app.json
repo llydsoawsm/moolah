@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "moneyguide",
-    "slug": "moneyguide",
+    "name": "Moolah",
+    "slug": "moolah",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "moneyguide",
+    "scheme": "moolah",
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true
@@ -33,7 +33,9 @@
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
         }
-      ]
+      ],
+      "expo-sqlite",
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true
