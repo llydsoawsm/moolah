@@ -18,25 +18,31 @@ jobs:
       - name: 🟢 Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
 
       - name: 📦 Install Dependencies
         run: npm install --legacy-peer-deps
 
       - name: 🛠️ Expo Prebuild iOS
-        run: npx expo prebuild --platform ios --clean
+        run: |
+          export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+          npx expo prebuild --platform ios --clean --no-install
 
       - name: 🔨 Install CocoaPods
         run: |
-          cd ios
-          pod install
-          cd ..
+          export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+          npx pod-install ios
 
       - name: 🏗️ Compile Xcode Project (Unsigned Release)
         run: |
-          xcodebuild -workspace ios/moolah.xcworkspace \
-                     -scheme moolah \
+          export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+          WORKSPACE_PATH=$(ls -d ios/*.xcworkspace | head -n 1)
+          SCHEME_NAME=$(xcodebuild -workspace "$WORKSPACE_PATH" -list | awk '/Schemes:/{getline; print $1}')
+          echo "Building workspace: $WORKSPACE_PATH with scheme: $SCHEME_NAME"
+          
+          xcodebuild -workspace "$WORKSPACE_PATH" \
+                     -scheme "$SCHEME_NAME" \
                      -configuration Release \
                      -sdk iphoneos \
                      -derivedDataPath build \
@@ -47,8 +53,10 @@ jobs:
 
       - name: 📦 Package .ipa Archive
         run: |
+          APP_PATH=$(find build/Build/Products/Release-iphoneos -name "*.app" | head -n 1)
+          echo "Packaging application from: $APP_PATH"
           mkdir -p Payload
-          cp -R build/Build/Products/Release-iphoneos/moolah.app Payload/
+          cp -R "$APP_PATH" Payload/
           zip -r -9 moolah.ipa Payload
 
       - name: 📤 Upload IPA Artifact
