@@ -14,4 +14,4 @@ export const DEFAULT_GEMINI_API_KEY = [
   'MOd0qw',
 ].join('');
 
-export const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
+export const DEFAULT_GEMINI_MODEL = 'gemini-3.8';

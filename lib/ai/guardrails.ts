@@ -1,5 +1,5 @@
 // ============================================================
-// MoneyGuide — AI Guardrails & Emergency Hotline System
+// MoneyGuide — AI Guardrails & Philippine Emergency Hotline System
 // ============================================================
 
 export interface GuardrailCheckResult {
@@ -16,110 +16,152 @@ export interface EmergencyHotline {
   region: string;
 }
 
-/** Verified Emergency & Crisis Hotlines */
+/** Verified Philippine Emergency & Mental Health Hotlines */
 export const EMERGENCY_HOTLINES: EmergencyHotline[] = [
   {
-    name: 'National Emergency Hotline',
+    name: 'NCMH Mental Health Crisis Hotline',
+    number: '1553',
+    description: '24/7 Nationwide toll-free crisis support & psychiatric counseling',
+    region: 'Philippines (Landline)',
+  },
+  {
+    name: 'NCMH Mobile Crisis Hotline (Globe/TM)',
+    number: '0917-899-8727',
+    description: '24/7 Mobile / SMS crisis support (Globe & TM subscribers)',
+    region: 'Philippines (Mobile)',
+  },
+  {
+    name: 'NCMH Mobile Crisis Hotline (Smart/Sun)',
+    number: '0919-057-1553',
+    description: '24/7 Mobile / SMS crisis support (Smart & Sun subscribers)',
+    region: 'Philippines (Mobile)',
+  },
+  {
+    name: 'Hopeline Philippines (Crisis Support)',
+    number: '0917-558-4673',
+    description: '24/7 Suicide prevention & emotional crisis support (or dial 2919 toll-free)',
+    region: 'Philippines',
+  },
+  {
+    name: 'In Touch Community Services',
+    number: '0917-800-1123',
+    description: '24/7 Free confidential emotional counseling & crisis line',
+    region: 'Philippines',
+  },
+  {
+    name: 'Philippine National Emergency Hotline',
     number: '911',
-    description: 'Police, fire, and medical emergency dispatch',
-    region: 'Philippines / US / Global',
+    description: 'National police, ambulance, medical emergency & rescue dispatch',
+    region: 'Philippines',
+  },
+  {
+    name: 'Philippine Red Cross Emergency Hotline',
+    number: '143',
+    description: '24/7 Medical ambulance, disaster rescue, and emergency assistance',
+    region: 'Philippines',
   },
   {
     name: 'DOH Health Line (Department of Health)',
     number: '1555',
-    description: 'Medical guidance & health emergency referral',
+    description: 'Government medical guidance & health emergency referral',
     region: 'Philippines',
-  },
-  {
-    name: 'NCMH Mental Health Crisis Hotline',
-    number: '1553',
-    description: '24/7 toll-free crisis support & counseling (Landline)',
-    region: 'Philippines',
-  },
-  {
-    name: 'NCMH Mobile Hotline',
-    number: '0917-899-8727',
-    description: '24/7 Mobile / SMS crisis support',
-    region: 'Philippines',
-  },
-  {
-    name: 'Suicide & Crisis Lifeline',
-    number: '988',
-    description: '24/7 free and confidential mental health support',
-    region: 'International / US / Canada',
-  },
-  {
-    name: 'European Emergency Number',
-    number: '112',
-    description: 'Universal medical and rescue emergency services',
-    region: 'Europe / International',
   },
 ];
 
-/** Health & medical distress keywords */
+/** Health & mental health distress keywords (English & Filipino / Tagalog) */
 const HEALTH_PATTERNS = [
-  /\b(heart\s*attack|stroke|chest\s*pain|cannot\s*breathe|shortness\s*of\s*breath)\b/i,
-  /\b(suicid|kill\s*myself|end\s*my\s*life|depression|depressed|want\s*to\s*die|self\s*harm)\b/i,
-  /\b(hospital|emergency\s*room|ambulance|doctor|poison|overdose|severe\s*pain)\b/i,
-  /\b(bleeding|seizure|unconscious|fainted|broken\s*bone|fever|infection)\b/i,
-  /\b(mental\s*health|anxiety\s*attack|panic\s*attack|crisis|psychiatrist)\b/i,
+  /\b(mental\s*health|depression|depressed|anxiety|anxious|panic\s*attack|suicid|kill\s*myself|end\s*my\s*life|want\s*to\s*die|self\s*harm|harm\s*myself|hurt\s*myself)\b/i,
+  /\b(health|medical|medicine|doctor|hospital|clinic|nurse|therapy|therapist|psychologist|psychiatrist|counseling|counselor)\b/i,
+  /\b(sick|ill|illness|disease|infection|fever|headache|pain|chest\s*pain|heart\s*attack|stroke|cannot\s*breathe|shortness\s*of\s*breath|seizure|ambulance|emergency\s*room)\b/i,
+  /\b(hopeless|unhappy|crying|overwhelmed|stressed|burnout|lonely|trauma|ptsd|mental)\b/i,
+  /\b(malungkot|nalulungkot|depresyon|magpakamatay|nagpapakamatay|ayaw\s*ko\s*na|pagod\s*na\s*ako|may\s*sakit|masama\s*pakiramdam|doktor|gamot|ospital|saklolo)\b/i,
 ];
 
-/** Financial & Moolah app keywords (explicitly allowed) */
+/**
+ * Financial & Money Keywords (Strict classifier):
+ * Matches anything connected to money, wealth, net worth, budgets, expenses, income, debt, etc.
+ */
 const FINANCIAL_PATTERNS = [
-  /\b(spend|spent|expense|income|earn|earned|received|cash|money|peso|dollar|\$|₱|budget)\b/i,
-  /\b(save|saving|savings|investment|invest|bank|gcash|maya|card|credit|debit|wallet)\b/i,
-  /\b(subscription|bill|bills|pay|paid|cost|price|fee|debt|owe|loan|tax|afford)\b/i,
-  /\b(category|categories|transaction|history|analytics|financial|wealth|fund)\b/i,
-  /\b(groceries|food|dining|transport|shopping|salary|wage|bonus|netflix|spotify)\b/i,
-  /\b(balance|net|receipt|voucher|discount|interest|inflation|50\/30\/20)\b/i,
-  /\b(change|update|modify|make\s*it|instead|actually|adjust|correct|switch|replace|cancel|due|day|month|monthly|\/mo)\b/i,
+  // Wealth & Net worth
+  /\b(net\s*worth|wealth|wealthiest|wealthy|richest|rich|richer|billionaire|millionaire|trillionaire|fortune|affluent|prosperity)\b/i,
+  // Currency & Money
+  /\b(money|cash|fund|funds|currency|currencies|forex|fx|exchange\s*rate|monetary)\b/i,
+  /\b(peso|pesos|dollar|dollars|usd|php|eur|gbp|jpy|cad|aud|bitcoin|btc|eth|crypto|cryptocurrency|token|coins?|[\$₱€£¥])\b/i,
+  // Spending & Expenses
+  /\b(spend|spent|spending|expense|expenses|cost|costs|costing|price|prices|pricing|afford|affordable|cheap|expensive|cheaper)\b/i,
+  /\b(buy|bought|buying|purchase|purchased|purchasing|sell|sold|selling|shopping|grocer(y|ies)|dining|food|restaurant|fare|fuel|gasoline|petrol|toll)\b/i,
+  // Income & Earnings
+  /\b(earn|earned|earning|earnings|income|incomes|revenue|revenues|profit|profits|dividend|dividends|salary|salaries|wage|wages|pay|paid|paying|paycheck|bonus|compensation)\b/i,
+  // Budgeting & Savings
+  /\b(budget|budgets|budgeting|save|saving|savings|saver|bank|banking|deposit|deposits|withdrawal|withdraw|transfers?|remittance|remit)\b/i,
+  /\b(50\/30\/20|burn\s*rate|cash\s*flow|financial|finances?|financially|capital)\b/i,
+  // Investments, Assets & Debt
+  /\b(invest|investing|investment|investments|investor|stock|stocks|shares?|equit(y|ies)|assets?|liabilit(y|ies)|portfolio|yield)\b/i,
+  /\b(debt|debts|loans?|borrow|borrowing|lending|lend|owe|owed|owes|credit|debit|mortgage|interest|interest\s*rate|amortization)\b/i,
+  // Bills & Overhead
+  /\b(bills?|subscription|subscriptions|netflix|spotify|utilit(y|ies)|rent|renting|rental|landlord|electricity|water\s*bill|internet\s*bill)\b/i,
+  // Taxes, Receipts & Economics
+  /\b(tax|taxes|taxation|vat|bir|receipt|receipts|voucher|vouchers|discounts?|inflation|recession|gdp|economy|economic|economics)\b/i,
+  // Payment methods
+  /\b(gcash|maya|paymaya|paypal|wallet|credit\s*card|debit\s*card|atm|bank\s*account|checking\s*account|savings\s*account)\b/i,
+  // Ledger action verbs when paired with numbers or financial entities
+  /\b(add|log|record|create|set|update|modify|change|adjust|cancel|remove|delete)\b.*\b(\d+|budget|expense|income|category|bill|sub|subscription|money|peso|cash)\b/i,
 ];
 
 /**
  * Classify a user prompt against guardrails:
- * 1. Health / medical crisis -> triggers verified emergency hotlines
- * 2. Financial / Moolah system intent -> allowed
- * 3. Unrelated / non-financial -> politely declined
+ * 1. Health / mental health crisis -> triggers Philippine emergency and crisis hotlines
+ * 2. Financial / Money topics -> allowed (including net worth, wealth, world rankings, etc.)
+ * 3. Non-financial / unrelated -> strictly rejected
  */
 export function checkPromptGuardrails(prompt: string, hasContext = false): GuardrailCheckResult {
   const clean = prompt.trim().toLowerCase();
 
-  // 1. Health & Medical Crisis Trigger
+  // 1. Health & Mental Health Crisis Trigger -> Send Philippine Hotlines
   for (const pattern of HEALTH_PATTERNS) {
     if (pattern.test(clean)) {
       return {
         allowed: false,
         type: 'health_emergency',
         message:
-          'It looks like you mentioned a health or emergency concern. Moolah is strictly an offline financial management tool and cannot provide medical assistance. If you or someone you know is in distress or experiencing a medical emergency, please contact professional emergency services immediately:',
+          'Your health and well-being are the top priority. While Moolah is strictly a personal finance app, free, confidential, and compassionate professional help is available in the Philippines right now. Please reach out to these crisis hotlines:',
         hotlines: EMERGENCY_HOTLINES,
       };
     }
   }
 
-  // 2. Financial & System Control Intent
+  // 2. Financial & Money-Connected Intent
   const hasFinancialIntent = FINANCIAL_PATTERNS.some((pattern) => pattern.test(clean));
-  const hasNumbers = /\d+/.test(clean); // E.g., "Add 500 lunch", "change it to 449"
-  const hasActionVerb = /\b(add|create|set|change|make|update|adjust|record|log|delete|remove)\b/i.test(clean);
-
-  // If ongoing conversation context exists (e.g. user was just shown an action card), allow conversational tweaks
-  if (hasContext && (hasNumbers || hasActionVerb || clean.length < 35)) {
+  if (hasFinancialIntent) {
     return {
       allowed: true,
       type: 'financial',
     };
   }
 
-  if (hasFinancialIntent || (hasNumbers && hasActionVerb)) {
+  // Check for numerical transaction logs (e.g., "450 lunch gcash", "5000 salary")
+  const hasAmountWithContext = /\b\d+(\.\d{1,2})?\s+(lunch|dinner|breakfast|food|coffee|transpo|grab|taxi|jeep|fare|gas|groceries|salary|rent|clothes|bill)\b/i.test(clean);
+  if (hasAmountWithContext) {
     return {
       allowed: true,
       type: 'financial',
     };
   }
 
-  // 3. Greeting / pleasantry exception
-  const greetings = /^(hi|hello|hey|help|howdy|good\s*(morning|afternoon|evening)|what\s*can\s*you\s*do|yes|ok|confirm|no)\b/i;
+  // Ongoing conversation context adjustments (e.g. user modifies a pending proposal: "change amount to 400" or replies "yes/confirm")
+  if (hasContext) {
+    const isActionConfirmation = /^(yes|confirm|proceed|ok|okay|no|cancel|undo)$/i.test(clean);
+    const isActionModification = /\b(make\s*it|change\s*(it|to|amount)?|set\s*(it|to)?|adjust|instead)\b.*\d+/i.test(clean);
+    if (isActionConfirmation || isActionModification) {
+      return {
+        allowed: true,
+        type: 'financial',
+      };
+    }
+  }
+
+  // 3. Greeting / pleasantry exception (warm financial welcome)
+  const greetings = /^(hi|hello|hey|help|howdy|good\s*(morning|afternoon|evening)|what\s*can\s*you\s*do)\b/i;
   if (greetings.test(clean)) {
     return {
       allowed: true,
@@ -127,11 +169,12 @@ export function checkPromptGuardrails(prompt: string, hasContext = false): Guard
     };
   }
 
-  // 4. Non-Financial / Unrelated Query -> Rejection
+  // 4. Non-Financial / Unrelated Query -> Strict Rejection
   return {
     allowed: false,
     type: 'unrelated',
     message:
-      'I am your Moolah Financial Copilot. I specialize exclusively in personal finance, money management, budgets, and expenses. Please ask a financial question or ask me to record a transaction, set a budget, or review your spending.',
+      'I am your Moolah Copilot and I specialize exclusively in personal finance, money management, and wealth.\n\nI can only answer questions and execute actions connected to money (such as tracking expenses, setting budgets, net worth, investments, and savings).\n\nPlease ask a financial question or tell me what expense or income to record.',
   };
 }
+

@@ -35,8 +35,11 @@ import {
   createNewSession,
   loadSessionMessages,
   persistMessage,
+  getUserSessions,
+  deleteSession,
+  type ChatSessionMeta,
 } from '../../lib/ai/chat-sessions';
-import { generateId } from '../../lib/utils';
+import { generateId, formatDate } from '../../lib/utils';
 import type { CopilotActionProposal } from '../../lib/ai/local-engine';
 import type { EmergencyHotline } from '../../lib/ai/guardrails';
 
@@ -50,20 +53,23 @@ const QUICK_PROMPTS = [
 
 export default function AICopilotModal() {
   const { colors } = useTheme();
+  // Ensure optimal contrast for text/icons on top of colors.primary across themes
+  const isLightPrimary = colors.primary.toLowerCase() === '#fafafa' || colors.statusBar === 'light';
+  const primaryTextColor = isLightPrimary ? '#09090B' : '#FFFFFF';
+
   const router = useRouter();
   const currentUser = useAppStore((s) => s.currentUser);
   const userId = currentUser?.id || 'guest';
-  const { geminiApiKey, setGeminiApiKey, geminiModel, setGeminiModel } = useAppStore();
+  const { geminiApiKey, geminiModel } = useAppStore();
 
   const [sessionId, setSessionId] = useState<string>('');
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
 
-  // Key & Model config modal state
-  const [keyModalVisible, setKeyModalVisible] = useState(false);
-  const [apiKeyInput, setApiKeyInput] = useState(geminiApiKey || '');
-  const [modelInput, setModelInput] = useState(geminiModel || 'gemini-3.8-flash');
+  // History sessions modal state
+  const [historyModalVisible, setHistoryModalVisible] = useState(false);
+  const [sessionList, setSessionList] = useState<ChatSessionMeta[]>([]);
 
   const scrollRef = useRef<ScrollView>(null);
 
@@ -101,11 +107,64 @@ export default function AICopilotModal() {
       id: generateId(),
       sender: 'assistant',
       text: 'New session started. How can I assist with your finances?',
-      engine: geminiApiKey ? 'gemini' : 'local',
+      engine: 'gemini',
       timestamp: Date.now(),
     };
     setMessages([welcome]);
     persistMessage(newSid, userId, welcome);
+    setHistoryModalVisible(false);
+  };
+
+  const handleOpenHistory = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setSessionList(getUserSessions(userId));
+    setHistoryModalVisible(true);
+  };
+
+  const handleSelectSession = (sid: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setSessionId(sid);
+    const stored = loadSessionMessages(sid);
+    if (stored.length > 0) {
+      setMessages(stored);
+    } else {
+      const welcome: ChatMessage = {
+        id: generateId(),
+        sender: 'assistant',
+        text: '👋 Hi! How can I assist with your finances in this session?',
+        engine: 'gemini',
+        timestamp: Date.now(),
+      };
+      setMessages([welcome]);
+    }
+    setHistoryModalVisible(false);
+  };
+
+  const handleDeleteSession = (sid: string, title: string) => {
+    Alert.alert(
+      'Delete Chat Session',
+      `Are you sure you want to delete "${title || 'this conversation'}"? This action cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            deleteSession(sid);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            const remaining = getUserSessions(userId);
+            setSessionList(remaining);
+            if (sid === sessionId) {
+              if (remaining.length > 0) {
+                handleSelectSession(remaining[0].id);
+              } else {
+                handleNewSession();
+              }
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleSend = async (textToSend?: string) => {
@@ -205,15 +264,6 @@ export default function AICopilotModal() {
     }
   };
 
-  const handleSaveApiKey = () => {
-    setGeminiApiKey(apiKeyInput.trim());
-    if (modelInput.trim()) {
-      setGeminiModel(modelInput.trim());
-    }
-    setKeyModalVisible(false);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  };
-
   return (
     <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: colors.background }]}
@@ -228,30 +278,30 @@ export default function AICopilotModal() {
           </View>
           <View>
             <Text style={[styles.headerTitle, { color: colors.text }]}>Financial Copilot</Text>
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={() => setKeyModalVisible(true)}
-              style={styles.engineBadge}
-            >
-              <View
-                style={[
-                  styles.engineDot,
-                  { backgroundColor: geminiApiKey ? '#10B981' : '#8B5CF6' },
-                ]}
-              />
+            <View style={styles.engineBadge}>
+              <View style={[styles.engineDot, { backgroundColor: '#10B981' }]} />
               <Text style={[styles.engineText, { color: colors.textSecondary }]}>
-                {geminiApiKey ? 'Online' : 'Offline'}
+                Gemini 3.8
               </Text>
-              <Ionicons name="settings-outline" size={12} color={colors.textSecondary} style={{ marginLeft: 3 }} />
-            </TouchableOpacity>
+            </View>
           </View>
         </View>
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <TouchableOpacity
+            onPress={handleOpenHistory}
+            style={[styles.closeBtn, { backgroundColor: colors.surface }]}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityLabel="Chat History"
+          >
+            <Ionicons name="time-outline" size={19} color={colors.text} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
             onPress={handleNewSession}
             style={[styles.closeBtn, { backgroundColor: colors.surface }]}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityLabel="New Chat"
           >
             <Ionicons name="create-outline" size={19} color={colors.text} />
           </TouchableOpacity>
@@ -260,6 +310,7 @@ export default function AICopilotModal() {
             onPress={() => router.back()}
             style={[styles.closeBtn, { backgroundColor: colors.surface }]}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityLabel="Close"
           >
             <Ionicons name="close" size={20} color={colors.text} />
           </TouchableOpacity>
@@ -306,7 +357,8 @@ export default function AICopilotModal() {
                 style={[
                   styles.messageText,
                   {
-                    color: msg.sender === 'user' ? '#FFFFFF' : colors.text,
+                    color: msg.sender === 'user' ? primaryTextColor : colors.text,
+                    fontWeight: msg.sender === 'user' ? '600' : '400',
                   },
                 ]}
               >
@@ -388,8 +440,8 @@ export default function AICopilotModal() {
                       onPress={() => handleConfirmAction(msg.id, msg.action!)}
                       activeOpacity={0.8}
                     >
-                      <Ionicons name="checkmark-circle-outline" size={16} color="#FFFFFF" />
-                      <Text style={styles.confirmActionBtnText}>Confirm Action</Text>
+                      <Ionicons name="checkmark-circle-outline" size={16} color={primaryTextColor} />
+                      <Text style={[styles.confirmActionBtnText, { color: primaryTextColor }]}>Confirm Action</Text>
                     </TouchableOpacity>
                   )}
                 </View>
@@ -453,89 +505,130 @@ export default function AICopilotModal() {
           <Ionicons
             name="arrow-up"
             size={18}
-            color={input.trim() ? '#FFFFFF' : colors.textMuted}
+            color={input.trim() ? primaryTextColor : colors.textMuted}
           />
         </TouchableOpacity>
       </View>
 
-      {/* Gemini API Key Modal */}
-      <Modal visible={keyModalVisible} transparent animationType="slide">
+      {/* History Sessions Modal */}
+      <Modal visible={historyModalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <View style={[styles.historyModalBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Google Gemini Configuration</Text>
-              <TouchableOpacity onPress={() => setKeyModalVisible(false)}>
-                <Ionicons name="close" size={20} color={colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={[styles.modalHelp, { color: colors.textSecondary }]}>
-              Enter your Google AI Studio API key and desired Gemini model tier. If offline or without a key, Moolah automatically runs the lightweight Local Engine.
-            </Text>
-
-            <Text style={{ fontSize: 12, fontWeight: '700', color: colors.text, marginTop: 4 }}>API Key:</Text>
-            <TextInput
-              style={[styles.keyInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
-              placeholder="Paste your API key here..."
-              placeholderTextColor={colors.textMuted}
-              value={apiKeyInput}
-              onChangeText={setApiKeyInput}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-
-            <Text style={{ fontSize: 12, fontWeight: '700', color: colors.text, marginTop: 4 }}>Gemini Model Name:</Text>
-            <TextInput
-              style={[styles.keyInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
-              placeholder="gemini-3.8"
-              placeholderTextColor={colors.textMuted}
-              value={modelInput}
-              onChangeText={setModelInput}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-
-            {/* Quick model selectors */}
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
-              {['gemini-3.8', 'gemini-2.0-pro-exp-02-05', 'gemini-1.5-pro'].map((m) => (
-                <TouchableOpacity
-                  key={m}
-                  onPress={() => setModelInput(m)}
-                  style={{
-                    backgroundColor: modelInput === m ? colors.primary + '25' : colors.surfaceAlt,
-                    borderColor: modelInput === m ? colors.primary : colors.border,
-                    borderWidth: 1,
-                    paddingHorizontal: 8,
-                    paddingVertical: 4,
-                    borderRadius: 6,
-                  }}
-                >
-                  <Text style={{ fontSize: 11, color: modelInput === m ? colors.primary : colors.textSecondary, fontWeight: '600' }}>
-                    {m}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <View style={[styles.historyIconBadge, { backgroundColor: colors.primary + '20' }]}>
+                  <Ionicons name="time" size={18} color={colors.primary} />
+                </View>
+                <View>
+                  <Text style={[styles.modalTitle, { color: colors.text }]}>Chat History</Text>
+                  <Text style={{ fontSize: 12, color: colors.textMuted }}>
+                    {sessionList.length} conversation{sessionList.length === 1 ? '' : 's'}
                   </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={[styles.modalSecondaryBtn, { borderColor: colors.border }]}
-                onPress={() => {
-                  setApiKeyInput('');
-                  setGeminiApiKey('');
-                  setKeyModalVisible(false);
-                }}
-              >
-                <Text style={{ color: '#EF4444', fontWeight: '600' }}>Clear / Offline Only</Text>
-              </TouchableOpacity>
+                </View>
+              </View>
 
               <TouchableOpacity
-                style={[styles.modalPrimaryBtn, { backgroundColor: colors.primary }]}
-                onPress={handleSaveApiKey}
+                onPress={() => setHistoryModalVisible(false)}
+                style={[styles.closeBtn, { backgroundColor: colors.surfaceAlt }]}
               >
-                <Text style={{ color: '#FFFFFF', fontWeight: 'bold' }}>Save Settings</Text>
+                <Ionicons name="close" size={18} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
+
+            {/* Start New Chat Button */}
+            <TouchableOpacity
+              style={[styles.newChatRow, { backgroundColor: colors.primary + '18', borderColor: colors.primary + '40' }]}
+              onPress={handleNewSession}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="add-circle" size={20} color={colors.primary} />
+              <Text style={[styles.newChatRowText, { color: colors.primary }]}>Start New Conversation</Text>
+            </TouchableOpacity>
+
+            {/* Sessions List */}
+            <ScrollView
+              style={styles.historyListScroll}
+              contentContainerStyle={{ paddingBottom: 16, gap: 10 }}
+              showsVerticalScrollIndicator={false}
+            >
+              {sessionList.length === 0 ? (
+                <View style={styles.emptyHistoryWrap}>
+                  <Ionicons name="chatbubbles-outline" size={44} color={colors.textMuted} />
+                  <Text style={[styles.emptyHistoryText, { color: colors.textMuted }]}>
+                    No chat sessions yet.
+                  </Text>
+                </View>
+              ) : (
+                sessionList.map((item) => {
+                  const isActive = item.id === sessionId;
+                  return (
+                    <TouchableOpacity
+                      key={item.id}
+                      style={[
+                        styles.sessionItem,
+                        {
+                          backgroundColor: isActive ? colors.surfaceAlt : colors.background,
+                          borderColor: isActive ? colors.primary : colors.border,
+                        },
+                      ]}
+                      onPress={() => handleSelectSession(item.id)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.sessionItemLeft}>
+                        <View
+                          style={[
+                            styles.sessionDot,
+                            { backgroundColor: isActive ? colors.primary : colors.border },
+                          ]}
+                        />
+                        <View style={{ flex: 1 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Text
+                              numberOfLines={1}
+                              style={[
+                                styles.sessionTitle,
+                                {
+                                  color: colors.text,
+                                  fontWeight: isActive ? '700' : '600',
+                                },
+                              ]}
+                            >
+                              {item.title}
+                            </Text>
+                            {isActive && (
+                              <View style={[styles.activePill, { backgroundColor: colors.primary }]}>
+                                <Text style={[styles.activePillText, { color: primaryTextColor }]}>Active</Text>
+                              </View>
+                            )}
+                          </View>
+
+                          {item.last_message ? (
+                            <Text
+                              numberOfLines={1}
+                              style={[styles.sessionPreview, { color: colors.textSecondary }]}
+                            >
+                              {item.last_message}
+                            </Text>
+                          ) : null}
+
+                          <Text style={[styles.sessionMeta, { color: colors.textMuted }]}>
+                            {item.message_count || 0} messages • {item.updated_at ? formatDate(item.updated_at) : 'Recent'}
+                          </Text>
+                        </View>
+                      </View>
+
+                      <TouchableOpacity
+                        onPress={() => handleDeleteSession(item.id, item.title)}
+                        style={styles.sessionDeleteBtn}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      >
+                        <Ionicons name="trash-outline" size={17} color={colors.textMuted} />
+                      </TouchableOpacity>
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -834,12 +927,95 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
   },
-  modalBox: {
+  historyModalBox: {
     width: '100%',
-    borderRadius: 20,
+    maxHeight: '80%',
+    borderRadius: 24,
     borderWidth: 1,
     padding: 20,
     gap: 14,
+  },
+  historyIconBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  newChatRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  newChatRowText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  historyListScroll: {
+    maxHeight: 380,
+  },
+  emptyHistoryWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+    gap: 10,
+  },
+  emptyHistoryText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  sessionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  sessionItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    flex: 1,
+    paddingRight: 8,
+  },
+  sessionDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginTop: 6,
+  },
+  sessionTitle: {
+    fontSize: 14,
+    flexShrink: 1,
+  },
+  activePill: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  activePillText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  sessionPreview: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  sessionMeta: {
+    fontSize: 11,
+    marginTop: 4,
+  },
+  sessionDeleteBtn: {
+    padding: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -849,33 +1025,5 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 17,
     fontWeight: '700',
-  },
-  modalHelp: {
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  keyInput: {
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 14,
-  },
-  modalActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 10,
-    marginTop: 4,
-  },
-  modalSecondaryBtn: {
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-  },
-  modalPrimaryBtn: {
-    borderRadius: 8,
-    paddingHorizontal: 18,
-    paddingVertical: 9,
   },
 });

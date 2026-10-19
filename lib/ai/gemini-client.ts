@@ -5,8 +5,8 @@ import { checkPromptGuardrails } from './guardrails';
 import { processLocalQuery, type CopilotResponse, type CopilotActionProposal } from './local-engine';
 import { executeGetFinancialHealth } from './actions-dispatcher';
 import { generateId } from '../utils';
+import { DEFAULT_GEMINI_API_KEY, DEFAULT_GEMINI_MODEL } from './config';
 
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
 export interface ChatMessage {
   id: string;
@@ -142,9 +142,9 @@ const COPILOT_TOOLS = [
  */
 export async function sendCopilotMessage(
   query: string,
-  apiKey: string,
+  apiKey?: string,
   chatHistory: ChatMessage[] = [],
-  modelName = 'gemini-3.8-flash',
+  modelName = DEFAULT_GEMINI_MODEL,
 ): Promise<CopilotResponse> {
   const hasContext = chatHistory && chatHistory.length > 0;
   const lastAction = [...chatHistory].reverse().find((m) => m.action && !m.action.executed)?.action;
@@ -167,18 +167,22 @@ export async function sendCopilotMessage(
     };
   }
 
-  // 2. If no API key is set, immediately execute offline deterministic engine
-  if (!apiKey || apiKey.trim().length === 0) {
+  // 2. Resolve API key (use user key if supplied, otherwise fallback to embedded default key)
+  const effectiveApiKey = (apiKey && apiKey.trim().length > 0) ? apiKey.trim() : DEFAULT_GEMINI_API_KEY;
+
+  if (!effectiveApiKey || effectiveApiKey.trim().length === 0) {
     return processLocalQuery(query, lastAction);
   }
 
-  // 3. Online Gemini API Request with high-model fallback cascade
-  const targetModel = modelName.trim();
+  // 3. Online Gemini API Request with Gemini 3.8 priority and model cascade
+  const targetModel = (modelName || DEFAULT_GEMINI_MODEL).trim();
   const modelsToTry = [
     targetModel === 'gemini-3.8' ? 'gemini-3.8-flash' : targetModel,
     'gemini-3.8-flash',
-    'gemini-3.7-flash',
-    'gemini-3.5-flash',
+    'gemini-3.8',
+    'gemini-2.5-flash',
+    'gemini-2.0-flash',
+    'gemini-1.5-flash',
   ].filter((v, i, a) => v && a.indexOf(v) === i);
 
   try {
@@ -188,13 +192,19 @@ export async function sendCopilotMessage(
       role: 'system',
       parts: [
         {
-          text: `You are Moolah AI Copilot, a minimalist high-intelligence financial agent with full controller authority over the user's financial system and SQLite ledger.
-RULES:
-1. PURE DIRECT ANSWER: Output only the pure, direct answer or status (1-2 sentences maximum). Never use filler phrases or meta commentary.
-2. NO CITATIONS OR BRACKETS: NEVER include citations, source footnotes, or bracketed text like [Ref: ...] or [Citation: ...]. Output clean, pure answers only.
-3. FULL SYSTEM CONTROL: When the user wants to add expenses/incomes, set budgets, create categories, remove transactions, cancel subscriptions, or modify settings, ALWAYS invoke the corresponding function tool immediately.
-4. MULTI-TURN & TWEAKS: If user modifies a previous action (e.g. "change amount to 450"), invoke the updated function tool immediately.
-5. Ledger Status (${health.month}):
+          text: `You are Moolah AI Copilot, a high-intelligence autonomous personal finance agent.
+STRICT SCOPE GUARDRAIL:
+1. MONEY TOPICS ONLY: You MUST ONLY answer questions and requests that are directly related to money, personal finance, wealth, net worth (e.g. who has the most net worth in the world, wealthiest people, billionaires), budgeting, investing, expenses, debt, business, and economics.
+2. STRICT REFUSAL FOR NON-FINANCIAL TOPICS: If the user asks about ANY topic NOT related to money (such as general knowledge like why birds fly, code generation like HTML hello world, writing 5 English words, poetry, science, trivia, history unrelated to finance), you MUST strictly refuse and output ONLY:
+"I specialize exclusively in personal finance, money management, and wealth. I cannot answer non-financial topics like this. Please ask me a question related to money, net worth, or your budget."
+3. HEALTH & MENTAL HEALTH: If the user mentions health or mental health distress (depression, sadness, crisis, sickness), express compassionate concern and refer them immediately to the Philippine hotlines:
+- National Emergency Hotline: 911
+- NCMH Mental Health Crisis Hotline: 1553 (Landline) or 0917-899-8727 (Mobile)
+- Hopeline Philippines: 0917-558-4673 or (02) 8804-4673 (or 2919 toll-free)
+- Philippine Red Cross: 143
+4. PURE DIRECT ANSWER: Output only the pure, direct answer or status (1-2 sentences maximum). Never use filler phrases or bracketed citations.
+5. FULL SYSTEM CONTROL: When the user wants to add expenses/incomes, set budgets, create categories, remove transactions, cancel subscriptions, or modify settings, ALWAYS invoke the corresponding function tool immediately.
+6. Ledger Status (${health.month}):
 - Total Income: ₱${health.income}
 - Total Expenses: ₱${health.expenses}
 - Net: ₱${health.net} (${health.savingsRate}% savings rate)
@@ -223,7 +233,8 @@ RULES:
       try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 25000);
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(currentModel)}:generateContent?key=${encodeURIComponent(apiKey.trim())}`;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(currentModel)}:generateContent?key=${encodeURIComponent(effectiveApiKey.trim())}`;
+
 
         const response = await fetch(url, {
           method: 'POST',

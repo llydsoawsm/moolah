@@ -49,14 +49,7 @@ export default function SettingsScreen() {
   const biometricEnabled = useAppStore((s) => s.biometricEnabled);
   const setBiometricEnabled = useAppStore((s) => s.setBiometricEnabled);
 
-  // AI Copilot
-  const geminiApiKey = useAppStore((s) => s.geminiApiKey);
-  const setGeminiApiKey = useAppStore((s) => s.setGeminiApiKey);
-  const geminiModel = useAppStore((s) => s.geminiModel);
-  const setGeminiModel = useAppStore((s) => s.setGeminiModel);
-  const [showApiKeyModal, setShowApiKeyModal] = useState(false);
-  const [apiKeyVal, setApiKeyVal] = useState(geminiApiKey || '');
-  const [modelVal, setModelVal] = useState(geminiModel || 'gemini-3.8');
+
 
   // PIN Form
   const [showPinSetup, setShowPinSetup] = useState(false);
@@ -612,30 +605,7 @@ export default function SettingsScreen() {
                 <View>
                   <Text style={[styles.settingTitle, { color: colors.text }]}>Open AI Copilot</Text>
                   <Text style={[styles.settingSubtitle, { color: colors.textMuted }]}>
-                    Autonomous voice/text financial controller
-                  </Text>
-                </View>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-            </TouchableOpacity>
-
-            {/* AI Engine & Gemini API Key */}
-            <TouchableOpacity
-              style={[styles.settingRow, styles.settingRowBorder, { borderColor: colors.border }]}
-              onPress={() => {
-                setApiKeyVal(geminiApiKey || '');
-                setShowApiKeyModal(true);
-              }}
-              activeOpacity={0.7}
-            >
-              <View style={styles.settingLeft}>
-                <View style={[styles.settingIcon, { backgroundColor: colors.surfaceAlt }]}>
-                  <Ionicons name="hardware-chip-outline" size={16} color={colors.textSecondary} />
-                </View>
-                <View>
-                  <Text style={[styles.settingTitle, { color: colors.text }]}>AI Engine Mode</Text>
-                  <Text style={[styles.settingSubtitle, { color: geminiApiKey ? '#10B981' : '#8B5CF6' }]}>
-                    {geminiApiKey ? `${geminiModel} (Online Cloud)` : 'Deterministic Engine (Offline Local)'}
+                    Autonomous financial assistant • Powered by Gemini 3.8
                   </Text>
                 </View>
               </View>
@@ -765,102 +735,6 @@ export default function SettingsScreen() {
                 );
               })}
             </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Gemini API Key Modal */}
-      <Modal visible={showApiKeyModal} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <View style={styles.modalHeaderRow}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>AI Copilot Engine Settings</Text>
-              <TouchableOpacity onPress={() => setShowApiKeyModal(false)}>
-                <Ionicons name="close" size={20} color={colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>
-              Enter your Google AI Studio API key and desired Gemini model tier. If offline or without a key, Moolah automatically runs the lightweight Local Engine.
-            </Text>
-
-            <Text style={{ fontSize: 12, fontWeight: '700', color: colors.text, marginBottom: 4 }}>API Key:</Text>
-            <TextInput
-              style={[
-                styles.keyInput,
-                { backgroundColor: colors.background, color: colors.text, borderColor: colors.border },
-              ]}
-              placeholder="Paste Google AI Studio or Cloud Key..."
-              placeholderTextColor={colors.textMuted}
-              value={apiKeyVal}
-              onChangeText={setApiKeyVal}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-
-            <Text style={{ fontSize: 12, fontWeight: '700', color: colors.text, marginBottom: 4 }}>Gemini Model Name:</Text>
-            <TextInput
-              style={[
-                styles.keyInput,
-                { backgroundColor: colors.background, color: colors.text, borderColor: colors.border },
-              ]}
-              placeholder="gemini-3.8"
-              placeholderTextColor={colors.textMuted}
-              value={modelVal}
-              onChangeText={setModelVal}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-
-            {/* Quick model selectors */}
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
-              {['gemini-3.8', 'gemini-2.0-pro-exp-02-05', 'gemini-1.5-pro'].map((m) => (
-                <TouchableOpacity
-                  key={m}
-                  onPress={() => setModelVal(m)}
-                  style={{
-                    backgroundColor: modelVal === m ? colors.primary + '25' : colors.surfaceAlt,
-                    borderColor: modelVal === m ? colors.primary : colors.border,
-                    borderWidth: 1,
-                    paddingHorizontal: 8,
-                    paddingVertical: 4,
-                    borderRadius: 6,
-                  }}
-                >
-                  <Text style={{ fontSize: 11, color: modelVal === m ? colors.primary : colors.textSecondary, fontWeight: '600' }}>
-                    {m}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <View style={styles.apiKeyActions}>
-              <TouchableOpacity
-                style={[styles.modalSecondaryBtn, { borderColor: colors.border }]}
-                onPress={() => {
-                  setApiKeyVal('');
-                  setGeminiApiKey('');
-                  setShowApiKeyModal(false);
-                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                }}
-              >
-                <Text style={{ color: '#EF4444', fontWeight: '600' }}>Reset to Local Offline</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.modalPrimaryBtn, { backgroundColor: colors.primary }]}
-                onPress={() => {
-                  setGeminiApiKey(apiKeyVal.trim());
-                  if (modelVal.trim()) {
-                    setGeminiModel(modelVal.trim());
-                  }
-                  setShowApiKeyModal(false);
-                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                }}
-              >
-                <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>Save Settings</Text>
-              </TouchableOpacity>
-            </View>
           </View>
         </View>
       </Modal>

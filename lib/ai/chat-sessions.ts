@@ -12,6 +12,7 @@ export interface ChatSessionMeta {
   created_at: string;
   updated_at: string;
   message_count?: number;
+  last_message?: string;
 }
 
 /**
@@ -55,6 +56,43 @@ export function createNewSession(userId: string, title = 'New Conversation'): st
     title,
   );
   return newId;
+}
+
+/**
+ * Get all past chat sessions for a user, sorted by most recent
+ */
+export function getUserSessions(userId: string): ChatSessionMeta[] {
+  const db = getDatabase();
+  const safeUser = userId || 'default_user';
+
+  const rows = db.getAllSync<any>(
+    `SELECT s.id, s.user_id, s.title, s.created_at, s.updated_at,
+            (SELECT COUNT(*) FROM chat_messages m WHERE m.session_id = s.id) as message_count,
+            (SELECT text FROM chat_messages m WHERE m.session_id = s.id ORDER BY m.created_at DESC LIMIT 1) as last_message
+     FROM chat_sessions s
+     WHERE s.user_id = ?
+     ORDER BY s.updated_at DESC`,
+    safeUser,
+  );
+
+  return rows.map((r) => ({
+    id: r.id,
+    user_id: r.user_id,
+    title: r.title || 'Financial Chat',
+    created_at: r.created_at,
+    updated_at: r.updated_at,
+    message_count: Number(r.message_count || 0),
+    last_message: r.last_message || '',
+  }));
+}
+
+/**
+ * Delete a chat session and its associated messages
+ */
+export function deleteSession(sessionId: string): void {
+  const db = getDatabase();
+  db.runSync('DELETE FROM chat_messages WHERE session_id = ?', sessionId);
+  db.runSync('DELETE FROM chat_sessions WHERE id = ?', sessionId);
 }
 
 /**
@@ -122,3 +160,4 @@ export function clearSession(sessionId: string): void {
   const db = getDatabase();
   db.runSync('DELETE FROM chat_messages WHERE session_id = ?', sessionId);
 }
+
