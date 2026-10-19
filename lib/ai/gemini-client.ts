@@ -88,6 +88,51 @@ const COPILOT_TOOLS = [
           required: ['name', 'amount', 'billing_day'],
         },
       },
+      {
+        name: 'delete_transaction',
+        description: 'Delete or remove a transaction from the SQLite ledger.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            amount: { type: 'NUMBER', description: 'Amount of transaction to delete' },
+            note: { type: 'STRING', description: 'Note or description keyword' },
+            category_name: { type: 'STRING', description: 'Category name of transaction' },
+          },
+        },
+      },
+      {
+        name: 'delete_subscription',
+        description: 'Cancel or remove a recurring bill or subscription.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            name: { type: 'STRING', description: 'Name of the subscription to cancel' },
+          },
+          required: ['name'],
+        },
+      },
+      {
+        name: 'delete_budget',
+        description: 'Delete or reset a category budget.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            category_name: { type: 'STRING', description: 'Category name' },
+          },
+          required: ['category_name'],
+        },
+      },
+      {
+        name: 'update_settings',
+        description: 'Update user preferences like currency code (e.g. PHP, USD, EUR) or theme (dark, light, midnight).',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            currency: { type: 'STRING', description: 'Currency code e.g. PHP, USD, EUR' },
+            theme: { type: 'STRING', enum: ['dark', 'light', 'midnight'], description: 'Theme name' },
+          },
+        },
+      },
     ],
   },
 ];
@@ -112,12 +157,6 @@ export async function sendCopilotMessage(
         engine: 'local',
         text: guard.message || 'Emergency medical services hotline alert.',
         hotlines: guard.hotlines,
-        citations: [
-          {
-            source: 'Emergency Dispatch & Crisis Directory',
-            note: 'Verified national and international health/mental health hotlines',
-          },
-        ],
       };
     }
 
@@ -125,12 +164,6 @@ export async function sendCopilotMessage(
     return {
       engine: 'local',
       text: guard.message || 'I only specialize in personal finance, money management, and budgets.',
-      citations: [
-        {
-          source: 'Moolah Domain Policy',
-          note: 'Finance-only guardrail enforced',
-        },
-      ],
     };
   }
 
@@ -155,17 +188,18 @@ export async function sendCopilotMessage(
       role: 'system',
       parts: [
         {
-          text: `You are Moolah AI Copilot, a minimalist high-intelligence financial controller in a personal finance app.
+          text: `You are Moolah AI Copilot, a minimalist high-intelligence financial agent with full controller authority over the user's financial system and SQLite ledger.
 RULES:
-1. MINIMALIST STYLE: Be extremely concise, direct, and minimalist (1-2 sentences max). Never output long paragraphs, fluffy greetings, or duplicate what is visible in the action card.
-2. STRICT FINANCIAL SCOPE: Discuss ONLY personal finances, expenses, budgets, savings, and investments.
-3. MANDATORY CITATIONS: For financial recommendations, provide recognized citations (e.g. [Citation: Elizabeth Warren, 50/30/20 Rule] or [Ref: SQLite Ledger]).
-4. CONTROLLER ACTIONS: Always call function tools for logging transactions, setting budgets, creating categories, and adding subscriptions. If user wants to tweak or change a previous action (e.g. "change it to 449 on 18"), formulate the updated function call directly.
-5. Current Ledger Snapshot (${health.month}):
+1. PURE DIRECT ANSWER: Output only the pure, direct answer or status (1-2 sentences maximum). Never use filler phrases or meta commentary.
+2. NO CITATIONS OR BRACKETS: NEVER include citations, source footnotes, or bracketed text like [Ref: ...] or [Citation: ...]. Output clean, pure answers only.
+3. FULL SYSTEM CONTROL: When the user wants to add expenses/incomes, set budgets, create categories, remove transactions, cancel subscriptions, or modify settings, ALWAYS invoke the corresponding function tool immediately.
+4. MULTI-TURN & TWEAKS: If user modifies a previous action (e.g. "change amount to 450"), invoke the updated function tool immediately.
+5. Ledger Status (${health.month}):
 - Total Income: ₱${health.income}
 - Total Expenses: ₱${health.expenses}
-- Net: ₱${health.net} (Savings Rate: ${health.savingsRate}%)
-- Daily Burn: ₱${health.burnRatePerDay}/day`,
+- Net: ₱${health.net} (${health.savingsRate}% savings rate)
+- Burn Rate: ₱${health.burnRatePerDay}/day
+- Top Spend: ${health.topCategories.map((c) => `${c.name} (₱${c.amount})`).join(', ') || 'None'}`,
         },
       ],
     };
@@ -234,25 +268,18 @@ RULES:
       return handleGeminiToolCall(name, args);
     }
 
-    // Normal Text Response
-    const text = candidate.parts?.map((p: any) => p.text).filter(Boolean).join('\n') || '';
+    // Normal Text Response — Clean any bracketed citations
+    const rawText = candidate.parts?.map((p: any) => p.text).filter(Boolean).join('\n') || '';
+    const cleanText = rawText
+      .replace(/\[(?:Citation|Ref)[^\]]*\]/gi, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
 
     return {
       engine: 'gemini',
-      text: text,
-      citations: [
-        {
-          source: `Google Gemini (${activeModelUsed})`,
-          note: 'Synthesized using real-time economic principles and SQLite context',
-        },
-        {
-          source: 'Moolah SQLite Ledger',
-          note: `Aggregated ledger data (${health.month})`,
-        },
-      ],
+      text: cleanText,
     };
   } catch (error) {
-    // Network offline or timeout -> Seamless fallback to Local Engine
     console.warn('Gemini request failed/timed out, switching to local offline engine:', error);
     return processLocalQuery(query);
   }
@@ -282,12 +309,6 @@ function handleGeminiToolCall(name: string, args: any): CopilotResponse {
         description: `Total amount: ₱${total.toLocaleString()}`,
         payload: { items },
       },
-      citations: [
-        {
-          source: 'Gemini Autonomous Action Dispatcher',
-          note: 'Validated parameters against SQLite schema',
-        },
-      ],
     };
   }
 
@@ -302,12 +323,6 @@ function handleGeminiToolCall(name: string, args: any): CopilotResponse {
         description: `Type: ${(args.type || 'expense').toUpperCase()}`,
         payload: args,
       },
-      citations: [
-        {
-          source: 'Taxonomy Engine',
-          note: 'Will be stored in SQLite categories table',
-        },
-      ],
     };
   }
 
@@ -322,12 +337,6 @@ function handleGeminiToolCall(name: string, args: any): CopilotResponse {
         description: `Monthly cap: ₱${Number(args.amount).toLocaleString()}`,
         payload: args,
       },
-      citations: [
-        {
-          source: 'Zero-Based Budget Framework',
-          note: 'Category-level expense limits',
-        },
-      ],
     };
   }
 
@@ -342,18 +351,67 @@ function handleGeminiToolCall(name: string, args: any): CopilotResponse {
         description: `₱${Number(args.amount).toLocaleString()} / month (Day ${args.billing_day})`,
         payload: args,
       },
-      citations: [
-        {
-          source: 'Cash Flow Protection',
-          note: 'Recurring commitments tracked in SQLite',
-        },
-      ],
+    };
+  }
+
+  if (name === 'delete_transaction') {
+    return {
+      engine: 'gemini',
+      text: `Deleting transaction${args.category_name ? ` (${args.category_name})` : ''}${args.amount ? ` of ₱${args.amount}` : ''}...`,
+      action: {
+        id: generateId(),
+        type: 'delete_transaction',
+        title: `Delete Transaction`,
+        description: `Remove matching expense from SQLite ledger`,
+        payload: args,
+      },
+    };
+  }
+
+  if (name === 'delete_subscription') {
+    return {
+      engine: 'gemini',
+      text: `Canceling subscription **${args.name}**...`,
+      action: {
+        id: generateId(),
+        type: 'delete_subscription',
+        title: `Cancel Subscription: ${args.name}`,
+        description: `Remove recurring bill from SQLite`,
+        payload: args,
+      },
+    };
+  }
+
+  if (name === 'delete_budget') {
+    return {
+      engine: 'gemini',
+      text: `Removing budget for **${args.category_name}**...`,
+      action: {
+        id: generateId(),
+        type: 'delete_budget',
+        title: `Delete Budget: ${args.category_name}`,
+        description: `Reset category budget allowance`,
+        payload: args,
+      },
+    };
+  }
+
+  if (name === 'update_settings') {
+    return {
+      engine: 'gemini',
+      text: `Updating settings: ${args.currency ? `Currency: ${args.currency}` : ''} ${args.theme ? `Theme: ${args.theme}` : ''}`.trim(),
+      action: {
+        id: generateId(),
+        type: 'update_settings',
+        title: `Update App Settings`,
+        description: `Preferences updated`,
+        payload: args,
+      },
     };
   }
 
   return {
     engine: 'gemini',
-    text: `Action ${name} prepared.`,
-    citations: [],
+    text: `Action ${name} executed.`,
   };
 }

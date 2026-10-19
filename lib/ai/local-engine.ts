@@ -18,7 +18,15 @@ export interface CopilotCitation {
 
 export interface CopilotActionProposal {
   id: string;
-  type: 'log_transactions' | 'create_category' | 'set_budget' | 'add_subscription';
+  type:
+    | 'log_transactions'
+    | 'create_category'
+    | 'set_budget'
+    | 'add_subscription'
+    | 'delete_transaction'
+    | 'delete_subscription'
+    | 'delete_budget'
+    | 'update_settings';
   title: string;
   description: string;
   payload: any;
@@ -29,7 +37,7 @@ export interface CopilotResponse {
   engine: 'local' | 'gemini';
   text: string;
   action?: CopilotActionProposal;
-  citations: CopilotCitation[];
+  citations?: CopilotCitation[];
   hotlines?: EmergencyHotline[];
 }
 
@@ -88,12 +96,6 @@ export function processLocalQuery(query: string, lastAction?: CopilotActionPropo
           description: `₱${newAmount.toLocaleString()} / month on day ${newDay}`,
           payload: updatedPayload,
         },
-        citations: [
-          {
-            source: 'Subscription Auditing Best Practice',
-            note: 'Updated recurring parameters',
-          },
-        ],
       };
     }
 
@@ -112,12 +114,6 @@ export function processLocalQuery(query: string, lastAction?: CopilotActionPropo
           description: `Monthly allowance limit in SQLite`,
           payload: updatedPayload,
         },
-        citations: [
-          {
-            source: 'Zero-Based Budgeting Framework',
-            note: 'Adjusted envelope cap',
-          },
-        ],
       };
     }
 
@@ -139,12 +135,92 @@ export function processLocalQuery(query: string, lastAction?: CopilotActionPropo
           description: `Adjusted amount`,
           payload: updatedPayload,
         },
-        citations: [
-          {
-            source: 'Local SQLite Engine',
-            note: 'Adjusted transaction parameter',
-          },
-        ],
+      };
+    }
+  }
+
+  // ------------------------------------------------------------
+  // Deletion / Cancellation / Settings Patterns (Full Agent Control)
+  // ------------------------------------------------------------
+  if (/\b(delete|remove)\s+(last\s+)?(expense|income|transaction)\b/i.test(lower) || /\b(delete|remove)\s+expense\b/i.test(lower)) {
+    const amountMatch = clean.match(/(\d+(?:,\d+)*(?:\.\d+)?)/);
+    const amount = amountMatch ? parseFloat(amountMatch[1].replace(/,/g, '')) : undefined;
+    return {
+      engine: 'local',
+      text: `Deleting ${amount ? `₱${amount.toLocaleString()} ` : 'last '}transaction from SQLite ledger.`,
+      action: {
+        id: generateId(),
+        type: 'delete_transaction',
+        title: 'Delete Transaction',
+        description: amount ? `Remove ₱${amount.toLocaleString()} expense` : 'Remove most recent transaction',
+        payload: { amount },
+      },
+    };
+  }
+
+  if (/\b(cancel|remove|delete)\s+(subscription|bill)?\s*([a-zA-Z0-9\s]+)\b/i.test(lower) && !lower.includes('expense') && !lower.includes('budget') && !lower.includes('category')) {
+    const match = clean.match(/(?:cancel|remove|delete)\s+(?:subscription|bill)?\s*([a-zA-Z0-9\s]+)/i);
+    const name = match && match[1] ? match[1].trim() : '';
+    if (name) {
+      return {
+        engine: 'local',
+        text: `Canceling subscription **${name}** from SQLite.`,
+        action: {
+          id: generateId(),
+          type: 'delete_subscription',
+          title: `Cancel Subscription: ${name}`,
+          description: `Remove recurring bill`,
+          payload: { name },
+        },
+      };
+    }
+  }
+
+  if (/\b(delete|remove|clear|reset)\s+budget\b/i.test(lower)) {
+    const forMatch = clean.match(/(?:for|on)\s+([a-zA-Z\s]+)/i);
+    const catName = forMatch ? forMatch[1].trim() : 'Food';
+    return {
+      engine: 'local',
+      text: `Removing monthly budget for **${catName}**.`,
+      action: {
+        id: generateId(),
+        type: 'delete_budget',
+        title: `Delete Budget: ${catName}`,
+        description: 'Reset category budget',
+        payload: { category_name: catName },
+      },
+    };
+  }
+
+  if (/\b(change|set)\s+(currency|theme)\b/i.test(lower)) {
+    const isCurrency = lower.includes('currency');
+    if (isCurrency) {
+      const currMatch = clean.match(/\b(PHP|USD|EUR|GBP|JPY|CAD|AUD|SGD)\b/i);
+      const currency = currMatch ? currMatch[1].toUpperCase() : 'PHP';
+      return {
+        engine: 'local',
+        text: `Updating currency to **${currency}**.`,
+        action: {
+          id: generateId(),
+          type: 'update_settings',
+          title: `Update Currency: ${currency}`,
+          description: `Set app currency`,
+          payload: { currency },
+        },
+      };
+    } else {
+      const themeMatch = clean.match(/\b(dark|light|midnight)\b/i);
+      const theme = (themeMatch ? themeMatch[1].toLowerCase() : 'dark') as any;
+      return {
+        engine: 'local',
+        text: `Updating theme to **${theme}**.`,
+        action: {
+          id: generateId(),
+          type: 'update_settings',
+          title: `Update Theme: ${theme}`,
+          description: `Set app theme`,
+          payload: { theme },
+        },
       };
     }
   }
@@ -179,12 +255,6 @@ export function processLocalQuery(query: string, lastAction?: CopilotActionPropo
         engine: 'local',
         text: `Prepared ${transactions.length} transaction(s):\n${breakdown}`,
         action,
-        citations: [
-          {
-            source: 'Local SQLite Engine',
-            note: 'Parsed deterministic syntax',
-          },
-        ],
       };
     }
   }
@@ -215,12 +285,6 @@ export function processLocalQuery(query: string, lastAction?: CopilotActionPropo
             description: `Type: ${isIncome ? 'Income' : 'Expense'}`,
             payload,
           },
-          citations: [
-            {
-              source: 'Local Moolah Taxonomy',
-              note: 'Stored on-device in SQLite',
-            },
-          ],
         };
       }
     }
@@ -252,12 +316,6 @@ export function processLocalQuery(query: string, lastAction?: CopilotActionPropo
           description: `Monthly allowance limit in SQLite`,
           payload,
         },
-        citations: [
-          {
-            source: 'Zero-Based Budgeting Framework',
-            note: 'Envelope spending limits prevent month-end cash flow shortfalls',
-          },
-        ],
       };
     }
   }
@@ -291,12 +349,6 @@ export function processLocalQuery(query: string, lastAction?: CopilotActionPropo
           description: `₱${amount.toLocaleString()} / month on day ${billingDay}`,
           payload,
         },
-        citations: [
-          {
-            source: 'Subscription Auditing Best Practice',
-            note: 'Explicit due-date tracking prevents overdraft fees and forgotten renewals',
-          },
-        ],
       };
     }
   }
@@ -315,18 +367,11 @@ export function processLocalQuery(query: string, lastAction?: CopilotActionPropo
       return {
         engine: 'local',
         text: `Your biggest expense this month is **${top.name}** at **₱${top.amount.toLocaleString()}** (${top.percentage}% of total spending).`,
-        citations: [
-          {
-            source: 'Moolah SQLite Ledger',
-            note: `Real ledger records for ${health.month}`,
-          },
-        ],
       };
     } else {
       return {
         engine: 'local',
         text: `No expenses recorded for ${health.month} yet.`,
-        citations: [{ source: 'Moolah SQLite', note: 'Zero records' }],
       };
     }
   }
@@ -336,12 +381,6 @@ export function processLocalQuery(query: string, lastAction?: CopilotActionPropo
     return {
       engine: 'local',
       text: `Your net balance for this month is **${net >= 0 ? '+' : ''}₱${net.toLocaleString()}** (Income: ₱${health.income.toLocaleString()}, Expenses: ₱${health.expenses.toLocaleString()}).`,
-      citations: [
-        {
-          source: 'Moolah SQLite Ledger',
-          note: `Aggregated for ${health.month}`,
-        },
-      ],
     };
   }
 
@@ -350,21 +389,15 @@ export function processLocalQuery(query: string, lastAction?: CopilotActionPropo
     return {
       engine: 'local',
       text: `Your average daily burn rate is **₱${health.burnRatePerDay.toLocaleString()}/day** with ${health.daysRemainingInMonth} days remaining this month.`,
-      citations: [
-        {
-          source: 'Cash Flow Velocity',
-          note: `Calculated from ${health.month} ledger`,
-        },
-      ],
     };
   }
 
   // 5d. General Financial Health & 50/30/20 Coaching
   let advice = '';
   if (health.income === 0 && health.expenses === 0) {
-    advice = `No transactions recorded for ${health.month} yet.\n\n**50/30/20 Benchmark:**\n• 50% Needs (Groceries, bills, rent)\n• 30% Wants (Dining, streaming)\n• 20% Savings (Emergency fund)\n\nTry: *"Add expense 150 coffee"* or *"Received 30000 salary bank"*.`;
+    advice = `No transactions recorded for ${health.month} yet.\n\n**50/30/20 Guideline:**\n• 50% Needs\n• 30% Wants\n• 20% Savings`;
   } else {
-    advice = `### 📊 Financial Health (${health.month})\n` +
+    advice = `### Financial Health (${health.month})\n` +
       `• **Income:** ₱${health.income.toLocaleString()} | **Expenses:** ₱${health.expenses.toLocaleString()}\n` +
       `• **Net:** ${net >= 0 ? '+' : ''}₱${net.toLocaleString()} (${savingsRate}% savings rate)\n` +
       `• **Daily Burn:** ~₱${health.burnRatePerDay.toLocaleString()}/day (${health.daysRemainingInMonth}d left)\n` +
@@ -377,27 +410,17 @@ export function processLocalQuery(query: string, lastAction?: CopilotActionPropo
     }
 
     if (savingsRate >= 20) {
-      advice += `⭐ Savings rate (${savingsRate}%) is on track with the 50/30/20 guideline.`;
+      advice += `Savings rate (${savingsRate}%) is on track.`;
     } else if (savingsRate > 0) {
-      advice += `💡 Current savings rate is ${savingsRate}%. Target is 20%.`;
+      advice += `Current savings rate is ${savingsRate}%. Target is 20%.`;
     } else {
-      advice += `⚠️ Deficit of ₱${Math.abs(net).toLocaleString()} this month. Pause discretionary expenses.`;
+      advice += `Deficit of ₱${Math.abs(net).toLocaleString()} this month. Pause discretionary expenses.`;
     }
   }
 
   return {
     engine: 'local',
     text: advice,
-    citations: [
-      {
-        source: 'Elizabeth Warren (All Your Worth)',
-        note: '50/30/20 Rule',
-      },
-      {
-        source: 'Moolah SQLite',
-        note: `Ledger data (${health.month})`,
-      },
-    ],
   };
 }
 

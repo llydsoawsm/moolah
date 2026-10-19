@@ -28,6 +28,7 @@ import {
   executeCreateCategory,
   executeSetBudget,
   executeAddSubscription,
+  executeCopilotAction,
 } from '../../lib/ai/actions-dispatcher';
 import {
   getOrCreateActiveSession,
@@ -131,13 +132,24 @@ export default function AICopilotModal() {
     try {
       const response = await sendCopilotMessage(query, geminiApiKey, messages, geminiModel);
 
+      // AI Agent Full Control: Auto-execute the action directly into the system/SQLite
+      let processedAction = response.action;
+      if (response.action) {
+        try {
+          executeCopilotAction(response.action);
+          processedAction = { ...response.action, executed: true };
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        } catch (actErr: any) {
+          console.warn('Action auto-execution error:', actErr);
+        }
+      }
+
       const botMsg: ChatMessage = {
         id: generateId(),
         sender: 'assistant',
         text: response.text,
         engine: response.engine,
-        action: response.action,
-        citations: response.citations,
+        action: processedAction,
         hotlines: response.hotlines,
         timestamp: Date.now(),
       };
@@ -162,23 +174,7 @@ export default function AICopilotModal() {
   const handleConfirmAction = (messageId: string, action: CopilotActionProposal) => {
     try {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-
-      let successDetail = '';
-
-      if (action.type === 'log_transactions') {
-        const items = action.payload.items || [];
-        const result = executeLogTransactions(items);
-        successDetail = `Recorded ${result.length} transaction(s) into SQLite.`;
-      } else if (action.type === 'create_category') {
-        const result = executeCreateCategory(action.payload);
-        successDetail = `Created "${result.name}" category in SQLite.`;
-      } else if (action.type === 'set_budget') {
-        const result = executeSetBudget(action.payload);
-        successDetail = `Saved monthly budget limit of ₱${result.amount.toLocaleString()} for ${result.category_name}.`;
-      } else if (action.type === 'add_subscription') {
-        const result = executeAddSubscription(action.payload);
-        successDetail = `Added subscription "${result.name}" (₱${result.amount.toLocaleString()}) due on day ${result.billing_day}.`;
-      }
+      const detail = executeCopilotAction(action);
 
       // Mark action as executed in message state
       setMessages((prev) =>
@@ -199,13 +195,13 @@ export default function AICopilotModal() {
       const confirmMsg: ChatMessage = {
         id: generateId(),
         sender: 'system',
-        text: `✅ **Action Executed**\n${successDetail}`,
+        text: `✅ **Action Executed**\n${detail}`,
         timestamp: Date.now(),
       };
       setMessages((prev) => [...prev, confirmMsg]);
       if (sessionId) persistMessage(sessionId, userId, confirmMsg);
     } catch (err: any) {
-      Alert.alert('Action Execution Failed', err?.message || 'Could not write to SQLite.');
+      Alert.alert('Action Execution Failed', err?.message || 'Could not execute system action.');
     }
   };
 
@@ -244,7 +240,7 @@ export default function AICopilotModal() {
                 ]}
               />
               <Text style={[styles.engineText, { color: colors.textSecondary }]}>
-                {geminiApiKey ? `${geminiModel} (Online)` : 'Local Engine (Offline)'}
+                {geminiApiKey ? 'Online' : 'Offline'}
               </Text>
               <Ionicons name="settings-outline" size={12} color={colors.textSecondary} style={{ marginLeft: 3 }} />
             </TouchableOpacity>
@@ -396,26 +392,6 @@ export default function AICopilotModal() {
                       <Text style={styles.confirmActionBtnText}>Confirm Action</Text>
                     </TouchableOpacity>
                   )}
-                </View>
-              )}
-
-              {/* Citations Pills */}
-              {msg.citations && msg.citations.length > 0 && (
-                <View style={styles.citationsContainer}>
-                  {msg.citations.map((cite, cIdx) => (
-                    <View
-                      key={cIdx}
-                      style={[
-                        styles.citationPill,
-                        { backgroundColor: colors.background, borderColor: colors.border },
-                      ]}
-                    >
-                      <Ionicons name="bookmark-outline" size={11} color={colors.primary} />
-                      <Text style={[styles.citationSource, { color: colors.textSecondary }]}>
-                        {cite.source}: <Text style={{ color: colors.textMuted }}>{cite.note}</Text>
-                      </Text>
-                    </View>
-                  ))}
                 </View>
               )}
             </View>

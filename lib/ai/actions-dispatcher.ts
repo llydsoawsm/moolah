@@ -4,7 +4,7 @@
 import { getDatabase } from '../../db/client';
 import { useAppStore } from '../../stores/app-store';
 import { generateId, getTodayISO } from '../../lib/utils';
-import type { TransactionType } from '../../lib/types';
+import type { TransactionType, ThemeName } from '../../lib/types';
 import { startOfMonth, format } from 'date-fns';
 
 export interface LogTransactionParams {
@@ -34,6 +34,27 @@ export interface AddSubscriptionParams {
   billing_day: number;
   category_name?: string;
   frequency?: 'weekly' | 'monthly' | 'yearly';
+}
+
+export interface DeleteTransactionParams {
+  id?: string;
+  note?: string;
+  amount?: number;
+  category_name?: string;
+}
+
+export interface DeleteSubscriptionParams {
+  name?: string;
+  id?: string;
+}
+
+export interface DeleteBudgetParams {
+  category_name: string;
+}
+
+export interface UpdateSettingsParams {
+  currency?: string;
+  theme?: ThemeName;
 }
 
 export interface FinancialHealthResult {
@@ -222,6 +243,137 @@ export function executeAddSubscription(params: AddSubscriptionParams) {
     billing_day: params.billing_day,
     next_due_date: nextDueDate,
   };
+}
+
+/**
+ * Execute deleting a transaction from SQLite ledger
+ */
+export function executeDeleteTransaction(params: DeleteTransactionParams) {
+  const db = getDatabase();
+  let targetId = params.id;
+
+  if (!targetId) {
+    let query = 'SELECT e.id, e.amount, e.note, c.name as category_name FROM expenses e JOIN categories c ON e.category_id = c.id WHERE 1=1';
+    const args: any[] = [];
+
+    if (params.amount) {
+      query += ' AND ABS(e.amount - ?) < 0.01';
+      args.push(Math.abs(params.amount));
+    }
+    if (params.note) {
+      query += ' AND LOWER(e.note) LIKE ?';
+      args.push(`%${params.note.toLowerCase()}%`);
+    }
+    if (params.category_name) {
+      query += ' AND LOWER(c.name) LIKE ?';
+      args.push(`%${params.category_name.toLowerCase()}%`);
+    }
+
+    query += ' ORDER BY e.created_at DESC LIMIT 1';
+    const found = db.getFirstSync<any>(query, ...args);
+    if (found) {
+      targetId = found.id;
+    } else {
+      const mostRecent = db.getFirstSync<any>('SELECT e.id, e.amount, e.note, c.name as category_name FROM expenses e JOIN categories c ON e.category_id = c.id ORDER BY e.created_at DESC LIMIT 1');
+      if (mostRecent) {
+        targetId = mostRecent.id;
+      } else {
+        throw new Error('No transaction found to delete.');
+      }
+    }
+  }
+
+  if (!targetId) {
+    throw new Error('No transaction found to delete.');
+  }
+
+  const tx = db.getFirstSync<any>('SELECT e.amount, c.name as category_name FROM expenses e JOIN categories c ON e.category_id = c.id WHERE e.id = ?', targetId);
+  db.runSync('DELETE FROM expenses WHERE id = ?', targetId);
+  useAppStore.getState().triggerRefresh();
+  return { id: targetId, amount: tx?.amount, category_name: tx?.category_name };
+}
+
+/**
+ * Execute deleting / canceling a subscription
+ */
+export function executeDeleteSubscription(params: DeleteSubscriptionParams) {
+  const db = getDatabase();
+  const q = params.name ? params.name.toLowerCase() : '';
+  const sub = db.getFirstSync<any>(
+    'SELECT id, name, amount FROM recurring_transactions WHERE LOWER(name) LIKE ? OR id = ? LIMIT 1',
+    `%${q}%`,
+    params.id || '',
+  );
+  if (!sub) {
+    throw new Error(`Subscription matching "${params.name}" was not found.`);
+  }
+  db.runSync('DELETE FROM recurring_transactions WHERE id = ?', sub.id);
+  useAppStore.getState().triggerRefresh();
+  return { id: sub.id, name: sub.name, amount: sub.amount };
+}
+
+/**
+ * Execute deleting / resetting a category budget
+ */
+export function executeDeleteBudget(params: DeleteBudgetParams) {
+  const db = getDatabase();
+  const cat = db.getFirstSync<any>(
+    'SELECT id, name FROM categories WHERE LOWER(name) LIKE ?',
+    `%${params.category_name.toLowerCase()}%`,
+  );
+  if (!cat) {
+    throw new Error(`Category "${params.category_name}" was not found.`);
+  }
+  db.runSync('DELETE FROM budgets WHERE category_id = ?', cat.id);
+  useAppStore.getState().triggerRefresh();
+  return { category_name: cat.name };
+}
+
+/**
+ * Execute updating user preference settings
+ */
+export function executeUpdateSettings(params: UpdateSettingsParams) {
+  const store = useAppStore.getState();
+  if (params.currency) {
+    store.setCurrency(params.currency.toUpperCase());
+  }
+  if (params.theme) {
+    store.setTheme(params.theme);
+  }
+  return params;
+}
+
+/**
+ * Unified action execution dispatcher for the AI agent
+ */
+export function executeCopilotAction(action: { type: string; payload: any }): string {
+  if (action.type === 'log_transactions') {
+    const items = action.payload.items || [];
+    const result = executeLogTransactions(items);
+    return `Recorded ${result.length} transaction(s) in SQLite ledger.`;
+  } else if (action.type === 'create_category') {
+    const result = executeCreateCategory(action.payload);
+    return `Created category "${result.name}".`;
+  } else if (action.type === 'set_budget') {
+    const result = executeSetBudget(action.payload);
+    return `Saved ₱${result.amount.toLocaleString()} budget for ${result.category_name}.`;
+  } else if (action.type === 'add_subscription') {
+    const result = executeAddSubscription(action.payload);
+    return `Added subscription "${result.name}" (₱${result.amount.toLocaleString()}) on day ${result.billing_day}.`;
+  } else if (action.type === 'delete_transaction') {
+    const result = executeDeleteTransaction(action.payload);
+    return `Deleted transaction (${result.category_name || ''} ₱${result.amount || ''}).`;
+  } else if (action.type === 'delete_subscription') {
+    const result = executeDeleteSubscription(action.payload);
+    return `Canceled subscription "${result.name}".`;
+  } else if (action.type === 'delete_budget') {
+    const result = executeDeleteBudget(action.payload);
+    return `Removed budget for ${result.category_name}.`;
+  } else if (action.type === 'update_settings') {
+    const result = executeUpdateSettings(action.payload);
+    return `Updated app settings (${result.currency ? `Currency: ${result.currency}` : ''} ${result.theme ? `Theme: ${result.theme}` : ''}).`.trim();
+  }
+  return 'Action completed successfully.';
 }
 
 /**
