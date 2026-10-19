@@ -9,11 +9,19 @@ on:
 jobs:
   build-ios:
     name: Build iOS App (.ipa)
-    runs-on: macos-14
+    runs-on: macos-15
 
     steps:
       - name: ⬇️ Checkout Repository
         uses: actions/checkout@v4
+
+      - name: 🛠️ Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: 'latest-stable'
+
+      - name: 🔍 Verify Xcode Version
+        run: xcodebuild -version
 
       - name: 🟢 Setup Node.js
         uses: actions/setup-node@v4
