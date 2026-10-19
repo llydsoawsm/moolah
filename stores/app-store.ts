@@ -4,6 +4,7 @@
 import { create } from 'zustand';
 import type { ThemeName, AnalyticsPeriod, AnalyticsMode, User } from '../lib/types';
 import { getDatabase } from '../db/client';
+import { DEFAULT_GEMINI_API_KEY, DEFAULT_GEMINI_MODEL } from '../lib/ai/config';
 
 interface AppState {
   // User Authentication
@@ -151,7 +152,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   setDbReady: (ready) => set({ dbReady: ready }),
 
   // AI Copilot
-  geminiApiKey: '',
+  geminiApiKey: DEFAULT_GEMINI_API_KEY,
   setGeminiApiKey: (key) => {
     set({ geminiApiKey: key });
     try {
@@ -159,7 +160,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       db.runSync("INSERT OR REPLACE INTO user_preferences (key, value) VALUES ('gemini_api_key', ?)", key);
     } catch {}
   },
-  geminiModel: 'gemini-3.8-flash',
+  geminiModel: DEFAULT_GEMINI_MODEL,
   setGeminiModel: (model) => {
     set({ geminiModel: model });
     try {
@@ -205,8 +206,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         biometricEnabled: prefs.biometric_enabled === 'true',
         rememberMe: rememberMe,
         currentUser: currentUser,
-        geminiApiKey: prefs.gemini_api_key || '',
-        geminiModel: prefs.gemini_model || 'gemini-3.8-flash',
+        geminiApiKey: prefs.gemini_api_key?.trim() || DEFAULT_GEMINI_API_KEY,
+        geminiModel: prefs.gemini_model?.trim() || DEFAULT_GEMINI_MODEL,
       });
 
       // If user is authenticated and has a PIN configured, lock the app until PIN/Biometric is verified

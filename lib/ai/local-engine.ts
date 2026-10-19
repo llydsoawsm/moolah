@@ -302,12 +302,64 @@ export function processLocalQuery(query: string, lastAction?: CopilotActionPropo
   }
 
   // ------------------------------------------------------------
-  // 5. Financial Health / Insights & 50/30/20 Coaching
+  // 5. Targeted Query Answering (Biggest expense, balance, savings)
   // ------------------------------------------------------------
   const health = executeGetFinancialHealth();
   const savingsRate = health.savingsRate;
   const net = health.net;
 
+  // 5a. Biggest / Top Expense Query
+  if (/\b(biggest|highest|most|top|largest)\s*(expense|spending|cost|spend)?\b/i.test(lower) || lower.includes('what is my biggest')) {
+    if (health.topCategories.length > 0) {
+      const top = health.topCategories[0];
+      return {
+        engine: 'local',
+        text: `Your biggest expense this month is **${top.name}** at **₱${top.amount.toLocaleString()}** (${top.percentage}% of total spending).`,
+        citations: [
+          {
+            source: 'Moolah SQLite Ledger',
+            note: `Real ledger records for ${health.month}`,
+          },
+        ],
+      };
+    } else {
+      return {
+        engine: 'local',
+        text: `No expenses recorded for ${health.month} yet.`,
+        citations: [{ source: 'Moolah SQLite', note: 'Zero records' }],
+      };
+    }
+  }
+
+  // 5b. Net Balance Query
+  if (/\b(balance|net|how much (money )?do i have|remaining)\b/i.test(lower) && !lower.includes('budget')) {
+    return {
+      engine: 'local',
+      text: `Your net balance for this month is **${net >= 0 ? '+' : ''}₱${net.toLocaleString()}** (Income: ₱${health.income.toLocaleString()}, Expenses: ₱${health.expenses.toLocaleString()}).`,
+      citations: [
+        {
+          source: 'Moolah SQLite Ledger',
+          note: `Aggregated for ${health.month}`,
+        },
+      ],
+    };
+  }
+
+  // 5c. Daily Burn Rate Query
+  if (/\b(burn rate|per day|daily spend|daily burn)\b/i.test(lower)) {
+    return {
+      engine: 'local',
+      text: `Your average daily burn rate is **₱${health.burnRatePerDay.toLocaleString()}/day** with ${health.daysRemainingInMonth} days remaining this month.`,
+      citations: [
+        {
+          source: 'Cash Flow Velocity',
+          note: `Calculated from ${health.month} ledger`,
+        },
+      ],
+    };
+  }
+
+  // 5d. General Financial Health & 50/30/20 Coaching
   let advice = '';
   if (health.income === 0 && health.expenses === 0) {
     advice = `No transactions recorded for ${health.month} yet.\n\n**50/30/20 Benchmark:**\n• 50% Needs (Groceries, bills, rent)\n• 30% Wants (Dining, streaming)\n• 20% Savings (Emergency fund)\n\nTry: *"Add expense 150 coffee"* or *"Received 30000 salary bank"*.`;
