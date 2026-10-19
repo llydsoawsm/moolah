@@ -220,6 +220,8 @@ export const DEFAULT_PREFERENCES: Record<string, string> = {
   biometric_enabled: 'false',
   currency: 'PHP',
   onboarding_complete: 'false',
+  gemini_api_key: '',
+  gemini_model: 'gemini-3.8-flash',
 };
 
 /** Date format strings (for date-fns) */

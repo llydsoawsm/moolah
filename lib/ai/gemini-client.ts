@@ -137,12 +137,12 @@ export async function sendCopilotMessage(
   }
 
   // 3. Online Gemini API Request with high-model fallback cascade
-  // Priority: User's requested model (e.g. gemini-3.8) -> gemini-2.0-pro-exp-02-05 -> gemini-1.5-pro -> gemini-2.0-flash
+  const targetModel = modelName.trim();
   const modelsToTry = [
-    modelName.trim(),
-    'gemini-2.0-pro-exp-02-05',
-    'gemini-1.5-pro',
-    'gemini-2.0-flash',
+    targetModel === 'gemini-3.8' ? 'gemini-3.8-flash' : targetModel,
+    'gemini-3.8-flash',
+    'gemini-3.7-flash',
+    'gemini-3.5-flash',
   ].filter((v, i, a) => v && a.indexOf(v) === i);
 
   try {
@@ -186,7 +186,7 @@ RULES:
     for (const currentModel of modelsToTry) {
       try {
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 9000);
+        const timeout = setTimeout(() => controller.abort(), 25000);
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(currentModel)}:generateContent?key=${encodeURIComponent(apiKey.trim())}`;
 
         const response = await fetch(url, {

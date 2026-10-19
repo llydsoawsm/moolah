@@ -159,7 +159,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       db.runSync("INSERT OR REPLACE INTO user_preferences (key, value) VALUES ('gemini_api_key', ?)", key);
     } catch {}
   },
-  geminiModel: 'gemini-3.8',
+  geminiModel: 'gemini-3.8-flash',
   setGeminiModel: (model) => {
     set({ geminiModel: model });
     try {
@@ -206,7 +206,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         rememberMe: rememberMe,
         currentUser: currentUser,
         geminiApiKey: prefs.gemini_api_key || '',
-        geminiModel: prefs.gemini_model || 'gemini-3.8',
+        geminiModel: prefs.gemini_model || 'gemini-3.8-flash',
       });
 
       // If user is authenticated and has a PIN configured, lock the app until PIN/Biometric is verified
