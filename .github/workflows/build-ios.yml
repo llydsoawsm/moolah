@@ -1,0 +1,59 @@
+name: Build iOS IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-ios:
+    name: Build iOS App (.ipa)
+    runs-on: macos-14
+
+    steps:
+      - name: ⬇️ Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: 📦 Install Dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: 🛠️ Expo Prebuild iOS
+        run: npx expo prebuild --platform ios --clean
+
+      - name: 🔨 Install CocoaPods
+        run: |
+          cd ios
+          pod install
+          cd ..
+
+      - name: 🏗️ Compile Xcode Project (Unsigned Release)
+        run: |
+          xcodebuild -workspace ios/moolah.xcworkspace \
+                     -scheme moolah \
+                     -configuration Release \
+                     -sdk iphoneos \
+                     -derivedDataPath build \
+                     CODE_SIGNING_ALLOWED=NO \
+                     CODE_SIGNING_REQUIRED=NO \
+                     CODE_SIGN_IDENTITY="" \
+                     PROVISIONING_PROFILE_SPECIFIER=""
+
+      - name: 📦 Package .ipa Archive
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/moolah.app Payload/
+          zip -r -9 moolah.ipa Payload
+
+      - name: 📤 Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: moolah-ios-ipa
+          path: moolah.ipa
+          retention-days: 14
