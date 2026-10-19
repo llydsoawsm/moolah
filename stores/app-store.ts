@@ -17,6 +17,10 @@ interface AppState {
   theme: ThemeName;
   setTheme: (theme: ThemeName) => void;
 
+  // Currency
+  currency: string;
+  setCurrency: (code: string) => void;
+
   // App Lock (PIN & Biometrics)
   isUnlocked: boolean;
   pinHash: string;
@@ -96,6 +100,17 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch {}
   },
 
+  // Currency
+  currency: 'PHP',
+  setCurrency: (currency) => {
+    set({ currency });
+    try {
+      const db = getDatabase();
+      db.runSync("INSERT OR REPLACE INTO user_preferences (key, value) VALUES ('currency', ?)", currency);
+      get().triggerRefresh();
+    } catch {}
+  },
+
   // Auth / App Lock
   isUnlocked: true,
   pinHash: '',
@@ -161,6 +176,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       set({
         theme: (prefs.theme as ThemeName) || 'dark',
+        currency: prefs.currency || 'PHP',
         pinHash: prefs.pin_hash || '',
         biometricEnabled: prefs.biometric_enabled === 'true',
         rememberMe: rememberMe,

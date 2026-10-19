@@ -11,15 +11,20 @@ import {
   Alert,
   Switch,
   TextInput,
+  Modal,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as Haptics from 'expo-haptics';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import { useTheme } from '../../hooks/useTheme';
 import { useAppStore } from '../../stores/app-store';
 import { themes, themeOptions } from '../../lib/theme';
-import { resetDatabase, getDatabase } from '../../db/client';
+import { resetDatabase, exportExpensesToCSV, exportAllDataJSON } from '../../db/client';
+import { SUPPORTED_CURRENCIES } from '../../lib/constants';
 import type { ThemeName } from '../../lib/types';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
@@ -32,6 +37,11 @@ export default function SettingsScreen() {
   const signOut = useAppStore((s) => s.signOut);
   const rememberMe = useAppStore((s) => s.rememberMe);
   const setRememberMe = useAppStore((s) => s.setRememberMe);
+
+  // Currency
+  const currentCurrency = useAppStore((s) => s.currency);
+  const setCurrency = useAppStore((s) => s.setCurrency);
+  const [showCurrencyModal, setShowCurrencyModal] = useState(false);
 
   // App Lock
   const pinHash = useAppStore((s) => s.pinHash);
@@ -133,29 +143,85 @@ export default function SettingsScreen() {
     );
   };
 
-  const handleExportCSV = () => {
+  const handleExportCSV = async () => {
     try {
-      const db = getDatabase();
-      const rows = db.getAllSync<any>(
-        `SELECT e.expense_date, e.amount, c.name as category, pm.name as payment_method, e.note
-         FROM expenses e
-         LEFT JOIN categories c ON e.category_id = c.id
-         LEFT JOIN payment_methods pm ON e.payment_method_id = pm.id
-         ORDER BY e.expense_date DESC`,
-      );
-
-      if (rows.length === 0) {
+      const csvData = exportExpensesToCSV();
+      if (!csvData || csvData.split('\n').length <= 1) {
         Alert.alert('No Data', 'There are no expenses to export.');
         return;
       }
 
-      const total = rows.reduce((s: number, r: any) => s + r.amount, 0);
-      Alert.alert(
-        'Export Summary',
-        `${rows.length} expenses recorded totaling ₱${total.toFixed(2)}.`,
-      );
+      const dateStr = new Date().toISOString().split('T')[0];
+      const fileName = `moolah-expenses-${dateStr}.csv`;
+
+      if (Platform.OS === 'web') {
+        const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', fileName);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        Alert.alert('Export Complete', 'Expenses CSV downloaded successfully.');
+        return;
+      }
+
+      const filePath = `${FileSystem.cacheDirectory}${fileName}`;
+      await FileSystem.writeAsStringAsync(filePath, csvData, { encoding: FileSystem.EncodingType.UTF8 });
+
+      if (await Sharing.isAvailableAsync()) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        await Sharing.shareAsync(filePath, {
+          mimeType: 'text/csv',
+          dialogTitle: 'Export Moolah Transactions',
+          UTI: 'public.comma-separated-values-text',
+        });
+      } else {
+        Alert.alert('Exported', `File saved to ${filePath}`);
+      }
     } catch (err) {
-      Alert.alert('Error', 'Failed to export data.');
+      console.error('Export error:', err);
+      Alert.alert('Error', 'Failed to export CSV file.');
+    }
+  };
+
+  const handleBackupJSON = async () => {
+    try {
+      const jsonData = exportAllDataJSON();
+      const dateStr = new Date().toISOString().split('T')[0];
+      const fileName = `moolah-backup-${dateStr}.json`;
+
+      if (Platform.OS === 'web') {
+        const blob = new Blob([jsonData], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', fileName);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        Alert.alert('Backup Complete', 'Backup file downloaded successfully.');
+        return;
+      }
+
+      const filePath = `${FileSystem.cacheDirectory}${fileName}`;
+      await FileSystem.writeAsStringAsync(filePath, jsonData, { encoding: FileSystem.EncodingType.UTF8 });
+
+      if (await Sharing.isAvailableAsync()) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        await Sharing.shareAsync(filePath, {
+          mimeType: 'application/json',
+          dialogTitle: 'Moolah Full Backup',
+        });
+      } else {
+        Alert.alert('Backup Saved', `Saved to ${filePath}`);
+      }
+    } catch (err) {
+      console.error('Backup error:', err);
+      Alert.alert('Error', 'Failed to create backup.');
     }
   };
 
@@ -191,8 +257,14 @@ export default function SettingsScreen() {
         )}
 
         {/* Appearance Section */}
+        {/* Appearance Section */}
         <Animated.View entering={FadeInDown.duration(400).delay(100)}>
-          <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>APPEARANCE</Text>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>APPEARANCE</Text>
+            <Text style={[styles.activeThemeBadge, { color: colors.primary }]}>
+              {themeOptions.find((t) => t.key === theme)?.label || 'Theme'} Active
+            </Text>
+          </View>
           <View style={styles.themeGrid}>
             {themeOptions.map((t) => {
               const isActive = theme === t.key;
@@ -205,62 +277,106 @@ export default function SettingsScreen() {
                     {
                       backgroundColor: colors.surface,
                       borderColor: isActive ? tc.primary : colors.border,
-                      borderWidth: isActive ? 2 : StyleSheet.hairlineWidth,
+                      borderWidth: isActive ? 2 : 1,
                     },
                   ]}
-                  onPress={() => setTheme(t.key)}
-                  activeOpacity={0.7}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    setTheme(t.key);
+                  }}
+                  activeOpacity={0.75}
                 >
-                  <View style={styles.themeCardTop}>
-                    {/* Clean Simple Vector Icon - No Emojis */}
+                  {/* Miniature Device Screen Preview */}
+                  <View
+                    style={[
+                      styles.miniPhoneFrame,
+                      {
+                        backgroundColor: t.previewBg,
+                        borderColor: isActive ? `${tc.primary}60` : tc.border,
+                      },
+                    ]}
+                  >
+                    {/* Mock Status Bar */}
+                    <View style={styles.miniStatusBar}>
+                      <View style={[styles.miniStatusDot, { backgroundColor: t.previewAccent }]} />
+                      <View style={[styles.miniStatusLine, { backgroundColor: `${tc.textMuted}50` }]} />
+                    </View>
+
+                    {/* Mock Hero Card */}
                     <View
                       style={[
-                        styles.themeIconWrapper,
+                        styles.miniHeroCard,
                         {
-                          backgroundColor: isActive ? tc.primary : tc.surfaceAlt,
+                          backgroundColor: t.previewSurface,
+                          borderColor: tc.border,
                         },
                       ]}
                     >
-                      <Ionicons
-                        name={t.icon as any}
-                        size={17}
-                        color={isActive ? (tc.statusBar === 'light' ? '#09090B' : '#FFFFFF') : tc.primary}
-                      />
+                      <View style={[styles.miniHeroPill, { backgroundColor: t.previewAccent }]} />
+                      <View style={[styles.miniHeroLine, { backgroundColor: `${tc.textSecondary}35` }]} />
                     </View>
 
-                    {/* Highly visible color preview swatches */}
-                    <View style={styles.themePreviewRow}>
-                      <View style={[styles.themeColorDot, { backgroundColor: tc.primary }]} />
-                      <View
-                        style={[
-                          styles.themeColorDot,
-                          {
-                            backgroundColor: tc.background,
-                            borderColor: tc.border,
-                            borderWidth: 1,
-                          },
-                        ]}
-                      />
+                    {/* Mock Sparkline / Activity Bars */}
+                    <View style={styles.miniBarRow}>
+                      <View style={[styles.miniBar, { height: 7, backgroundColor: tc.primary }]} />
+                      <View style={[styles.miniBar, { height: 14, backgroundColor: tc.success }]} />
+                      <View style={[styles.miniBar, { height: 5, backgroundColor: tc.danger }]} />
+                      <View style={[styles.miniBar, { height: 11, backgroundColor: tc.warning }]} />
+                      <View style={[styles.miniBar, { height: 9, backgroundColor: tc.primary }]} />
+                    </View>
+
+                    {/* Mock Bottom Tab Bar */}
+                    <View
+                      style={[
+                        styles.miniTabBar,
+                        {
+                          backgroundColor: t.previewSurface,
+                          borderColor: tc.tabBarBorder,
+                        },
+                      ]}
+                    >
+                      <View style={[styles.miniTabDot, { backgroundColor: tc.primary }]} />
+                      <View style={[styles.miniTabDot, { backgroundColor: `${tc.tabBarInactive}70` }]} />
+                      <View style={[styles.miniTabDot, { backgroundColor: `${tc.tabBarInactive}70` }]} />
                     </View>
                   </View>
 
-                  <View style={styles.themeBottom}>
-                    <Text
+                  {/* Theme Info & Selection Checkmark */}
+                  <View style={styles.themeInfoRow}>
+                    <View style={styles.themeMetaText}>
+                      <Text
+                        style={[
+                          styles.themeLabel,
+                          {
+                            color: colors.text,
+                            fontWeight: isActive ? '700' : '600',
+                          },
+                        ]}
+                      >
+                        {t.label}
+                      </Text>
+                      <Text style={[styles.themeTagline, { color: colors.textMuted }]} numberOfLines={1}>
+                        {t.tagline}
+                      </Text>
+                    </View>
+
+                    <View
                       style={[
-                        styles.themeLabel,
+                        styles.checkCircle,
                         {
-                          color: colors.text,
-                          fontWeight: isActive ? '700' : '500',
+                          borderColor: isActive ? tc.primary : colors.border,
+                          backgroundColor: isActive ? tc.primary : 'transparent',
                         },
                       ]}
                     >
-                      {t.label}
-                    </Text>
-                    {isActive ? (
-                      <Ionicons name="checkmark-circle" size={16} color={tc.primary} />
-                    ) : (
-                      <Ionicons name="ellipse-outline" size={16} color={colors.textMuted} />
-                    )}
+                      {isActive && (
+                        <Ionicons
+                          name="checkmark"
+                          size={11}
+                          color={tc.statusBar === 'light' ? '#09090B' : '#FFFFFF'}
+                        />
+                      )}
+                    </View>
                   </View>
                 </TouchableOpacity>
               );
@@ -384,12 +500,73 @@ export default function SettingsScreen() {
           </View>
         </Animated.View>
 
-        {/* Customization */}
+        {/* Preferences & Customization */}
         <Animated.View entering={FadeInDown.duration(400).delay(220)}>
-          <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>CUSTOMIZATION</Text>
+          <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>PREFERENCES & FEATURES</Text>
           <View style={[styles.settingsGroup, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            {/* Currency Selector */}
             <TouchableOpacity
               style={styles.settingRow}
+              onPress={() => setShowCurrencyModal(true)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.settingLeft}>
+                <View style={[styles.settingIcon, { backgroundColor: colors.surfaceAlt }]}>
+                  <Ionicons name="cash-outline" size={16} color={colors.textSecondary} />
+                </View>
+                <View>
+                  <Text style={[styles.settingTitle, { color: colors.text }]}>Currency</Text>
+                  <Text style={[styles.settingSubtitle, { color: colors.textMuted }]}>
+                    {SUPPORTED_CURRENCIES[currentCurrency]?.name || currentCurrency} ({SUPPORTED_CURRENCIES[currentCurrency]?.symbol || '₱'})
+                  </Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+            </TouchableOpacity>
+
+            {/* Monthly Budgets */}
+            <TouchableOpacity
+              style={[styles.settingRow, styles.settingRowBorder, { borderColor: colors.border }]}
+              onPress={() => router.push('/(modals)/budget-manager')}
+              activeOpacity={0.7}
+            >
+              <View style={styles.settingLeft}>
+                <View style={[styles.settingIcon, { backgroundColor: colors.surfaceAlt }]}>
+                  <Ionicons name="pie-chart-outline" size={16} color={colors.textSecondary} />
+                </View>
+                <View>
+                  <Text style={[styles.settingTitle, { color: colors.text }]}>Monthly Budgets</Text>
+                  <Text style={[styles.settingSubtitle, { color: colors.textMuted }]}>
+                    Spending limits & category targets
+                  </Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+            </TouchableOpacity>
+
+            {/* Subscriptions & Bills */}
+            <TouchableOpacity
+              style={[styles.settingRow, styles.settingRowBorder, { borderColor: colors.border }]}
+              onPress={() => router.push('/(modals)/recurring-manager')}
+              activeOpacity={0.7}
+            >
+              <View style={styles.settingLeft}>
+                <View style={[styles.settingIcon, { backgroundColor: colors.surfaceAlt }]}>
+                  <Ionicons name="repeat-outline" size={16} color={colors.textSecondary} />
+                </View>
+                <View>
+                  <Text style={[styles.settingTitle, { color: colors.text }]}>Subscriptions & Bills</Text>
+                  <Text style={[styles.settingSubtitle, { color: colors.textMuted }]}>
+                    Recurring overhead & reminders
+                  </Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+            </TouchableOpacity>
+
+            {/* Categories */}
+            <TouchableOpacity
+              style={[styles.settingRow, styles.settingRowBorder, { borderColor: colors.border }]}
               onPress={() => router.push('/(modals)/category-picker')}
               activeOpacity={0.7}
             >
@@ -411,23 +588,45 @@ export default function SettingsScreen() {
 
         {/* Data Management */}
         <Animated.View entering={FadeInDown.duration(400).delay(280)}>
-          <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>DATA</Text>
+          <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>DATA & BACKUP</Text>
           <View style={[styles.settingsGroup, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            {/* CSV Export */}
             <TouchableOpacity style={styles.settingRow} onPress={handleExportCSV} activeOpacity={0.7}>
               <View style={styles.settingLeft}>
                 <View style={[styles.settingIcon, { backgroundColor: colors.surfaceAlt }]}>
-                  <Ionicons name="download-outline" size={16} color={colors.textSecondary} />
+                  <Ionicons name="document-text-outline" size={16} color={colors.textSecondary} />
                 </View>
                 <View>
-                  <Text style={[styles.settingTitle, { color: colors.text }]}>Export Records</Text>
+                  <Text style={[styles.settingTitle, { color: colors.text }]}>Export CSV File</Text>
                   <Text style={[styles.settingSubtitle, { color: colors.textMuted }]}>
-                    View CSV summary
+                    Download all expenses spreadsheet
                   </Text>
                 </View>
               </View>
-              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+              <Ionicons name="share-outline" size={18} color={colors.textMuted} />
             </TouchableOpacity>
 
+            {/* JSON Backup */}
+            <TouchableOpacity
+              style={[styles.settingRow, styles.settingRowBorder, { borderColor: colors.border }]}
+              onPress={handleBackupJSON}
+              activeOpacity={0.7}
+            >
+              <View style={styles.settingLeft}>
+                <View style={[styles.settingIcon, { backgroundColor: colors.surfaceAlt }]}>
+                  <Ionicons name="cloud-download-outline" size={16} color={colors.textSecondary} />
+                </View>
+                <View>
+                  <Text style={[styles.settingTitle, { color: colors.text }]}>Full JSON Backup</Text>
+                  <Text style={[styles.settingSubtitle, { color: colors.textMuted }]}>
+                    Export full app database snapshot
+                  </Text>
+                </View>
+              </View>
+              <Ionicons name="share-outline" size={18} color={colors.textMuted} />
+            </TouchableOpacity>
+
+            {/* Clear All Data */}
             <TouchableOpacity
               style={[styles.settingRow, styles.settingRowBorder, { borderColor: colors.border }]}
               onPress={handleClearData}
@@ -459,6 +658,58 @@ export default function SettingsScreen() {
 
         <View style={styles.bottomSpacer} />
       </ScrollView>
+
+      {/* Currency Selector Modal */}
+      <Modal visible={showCurrencyModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={styles.modalHeaderRow}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Select Currency</Text>
+              <TouchableOpacity onPress={() => setShowCurrencyModal(false)}>
+                <Ionicons name="close" size={20} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 360 }}>
+              {Object.entries(SUPPORTED_CURRENCIES).map(([code, cur]) => {
+                const isSelected = currentCurrency === code;
+                return (
+                  <TouchableOpacity
+                    key={code}
+                    style={[
+                      styles.currencyItem,
+                      {
+                        backgroundColor: isSelected ? colors.surfaceAlt : 'transparent',
+                        borderColor: isSelected ? colors.primary : 'transparent',
+                      },
+                    ]}
+                    onPress={() => {
+                      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                      setCurrency(code);
+                      setShowCurrencyModal(false);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.currencyLeft}>
+                      <View style={[styles.currencySymbolCircle, { backgroundColor: colors.surfaceAlt }]}>
+                        <Text style={[styles.currencySymbol, { color: colors.text }]}>{cur.symbol}</Text>
+                      </View>
+                      <View>
+                        <Text style={[styles.currencyName, { color: colors.text }]}>{cur.name}</Text>
+                        <Text style={[styles.currencyCode, { color: colors.textMuted }]}>{code}</Text>
+                      </View>
+                    </View>
+
+                    {isSelected && (
+                      <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -515,61 +766,131 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  sectionLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    letterSpacing: 0.6,
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 8,
     marginTop: 6,
     paddingHorizontal: 2,
   },
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.6,
+  },
+  activeThemeBadge: {
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.2,
+  },
   themeGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    justifyContent: 'space-between',
     gap: 10,
-    marginBottom: 20,
+    marginBottom: 22,
   },
   themeCard: {
-    width: '48.5%',
+    width: '48.3%',
     borderRadius: 16,
-    padding: 12,
-    minHeight: 88,
+    padding: 10,
     justifyContent: 'space-between',
   },
-  themeCardTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  miniPhoneFrame: {
+    width: '100%',
+    height: 90,
+    borderRadius: 11,
+    borderWidth: 1,
+    padding: 7,
     justifyContent: 'space-between',
-    marginBottom: 10,
+    overflow: 'hidden',
   },
-  themeIconWrapper: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  themePreviewRow: {
+  miniStatusBar: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  miniStatusDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+  },
+  miniStatusLine: {
+    width: 22,
+    height: 3,
+    borderRadius: 1.5,
+  },
+  miniHeroCard: {
+    borderRadius: 6,
+    borderWidth: 1,
+    padding: 6,
     gap: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 10,
-    backgroundColor: 'rgba(128, 128, 128, 0.08)',
   },
-  themeColorDot: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
+  miniHeroPill: {
+    width: 28,
+    height: 4,
+    borderRadius: 2,
   },
-  themeBottom: {
+  miniHeroLine: {
+    width: '65%',
+    height: 3,
+    borderRadius: 1.5,
+  },
+  miniBarRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    paddingHorizontal: 4,
+    height: 16,
+  },
+  miniBar: {
+    width: 6,
+    borderRadius: 2,
+  },
+  miniTabBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    height: 12,
+    borderRadius: 5,
+    borderWidth: 0.5,
+  },
+  miniTabDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+  },
+  themeInfoRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    marginTop: 10,
+    paddingHorizontal: 2,
+  },
+  themeMetaText: {
+    flex: 1,
+  },
+  themeTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   themeLabel: {
     fontSize: 13,
+    letterSpacing: -0.2,
+  },
+  themeTagline: {
+    fontSize: 10,
+    marginTop: 1,
+  },
+  checkCircle: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 6,
   },
   settingsGroup: {
     borderRadius: 16,
@@ -659,5 +980,62 @@ const styles = StyleSheet.create({
   },
   bottomSpacer: {
     height: 30,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  modalBox: {
+    width: '100%',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    borderTopWidth: 1,
+    padding: 20,
+    paddingBottom: 36,
+  },
+  modalHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  currencyItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  currencyLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  currencySymbolCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  currencySymbol: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  currencyName: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  currencyCode: {
+    fontSize: 12,
+    marginTop: 1,
   },
 });

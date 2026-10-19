@@ -98,18 +98,53 @@ export function getTheme(name?: ThemeName | string | null): ThemeColors {
   return themes.dark;
 }
 
-/** Theme option definition with simple vector icon */
+/** Theme option definition with display properties */
 export interface ThemeOption {
   key: ThemeName;
   label: string;
-  icon: 'moon-outline' | 'sunny-outline' | 'flower-outline' | 'leaf-outline';
-  emoji?: string;
+  tagline: string;
+  icon: 'moon' | 'sunny' | 'flower' | 'leaf';
+  previewBg: string;
+  previewSurface: string;
+  previewAccent: string;
 }
 
-/** List of available themes with display names and simple vector icons */
+/** List of available themes with rich preview data */
 export const themeOptions: ThemeOption[] = [
-  { key: 'dark', label: 'Dark', icon: 'moon-outline' },
-  { key: 'light', label: 'Light', icon: 'sunny-outline' },
-  { key: 'pink', label: 'Pink', icon: 'flower-outline' },
-  { key: 'green', label: 'Green', icon: 'leaf-outline' },
+  {
+    key: 'dark',
+    label: 'Dark',
+    tagline: 'Midnight Onyx',
+    icon: 'moon',
+    previewBg: '#09090B',
+    previewSurface: '#18181B',
+    previewAccent: '#FAFAFA',
+  },
+  {
+    key: 'light',
+    label: 'Light',
+    tagline: 'Pure Slate',
+    icon: 'sunny',
+    previewBg: '#F8FAFC',
+    previewSurface: '#FFFFFF',
+    previewAccent: '#09090B',
+  },
+  {
+    key: 'pink',
+    label: 'Rose',
+    tagline: 'Blush Velvet',
+    icon: 'flower',
+    previewBg: '#FDF2F4',
+    previewSurface: '#FFFFFF',
+    previewAccent: '#E11D48',
+  },
+  {
+    key: 'green',
+    label: 'Emerald',
+    tagline: 'Botanical Mint',
+    icon: 'leaf',
+    previewBg: '#F0FDF4',
+    previewSurface: '#FFFFFF',
+    previewAccent: '#059669',
+  },
 ];

@@ -101,6 +101,20 @@ export default function RootLayout() {
           }}
         />
         <Stack.Screen
+          name="(modals)/budget-manager"
+          options={{
+            presentation: 'modal',
+            animation: 'slide_from_bottom',
+          }}
+        />
+        <Stack.Screen
+          name="(modals)/recurring-manager"
+          options={{
+            presentation: 'modal',
+            animation: 'slide_from_bottom',
+          }}
+        />
+        <Stack.Screen
           name="(modals)/receipt-viewer"
           options={{
             presentation: 'fullScreenModal',

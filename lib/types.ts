@@ -168,3 +168,50 @@ export interface PasswordResetRecord {
   used: number;
 }
 
+/** Budget record */
+export interface Budget {
+  id: string;
+  category_id: string; // Category ID or 'total'
+  amount: number;
+  period: 'monthly' | 'weekly';
+  created_at: string;
+  updated_at: string;
+}
+
+/** Budget with category details and calculated spending */
+export interface BudgetWithSpending extends Budget {
+  category_name: string;
+  category_icon: string;
+  category_color: string;
+  spent: number;
+  remaining: number;
+  percentage: number;
+}
+
+/** Recurring Transaction / Subscription record */
+export interface RecurringTransaction {
+  id: string;
+  type: TransactionType;
+  name: string;
+  amount: number;
+  category_id: string;
+  payment_method_id: string | null;
+  frequency: 'weekly' | 'monthly' | 'yearly';
+  billing_day: number;
+  next_due_date: string; // YYYY-MM-DD
+  is_active: number; // 0 or 1
+  created_at: string;
+  category_name?: string;
+  category_icon?: string;
+  category_color?: string;
+  payment_method_name?: string;
+}
+
+/** Currency configuration */
+export interface CurrencyConfig {
+  code: string;
+  symbol: string;
+  name: string;
+  locale: string;
+}
+

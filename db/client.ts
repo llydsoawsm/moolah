@@ -89,11 +89,39 @@ export function initializeDatabase(): void {
       created_at  TEXT DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS budgets (
+      id          TEXT PRIMARY KEY,
+      category_id TEXT NOT NULL,
+      amount      REAL NOT NULL,
+      period      TEXT DEFAULT 'monthly',
+      created_at  TEXT DEFAULT (datetime('now')),
+      updated_at  TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS recurring_transactions (
+      id                TEXT PRIMARY KEY,
+      type              TEXT NOT NULL DEFAULT 'expense',
+      name              TEXT NOT NULL,
+      amount            REAL NOT NULL,
+      category_id       TEXT NOT NULL,
+      payment_method_id TEXT,
+      frequency         TEXT NOT NULL DEFAULT 'monthly',
+      billing_day       INTEGER NOT NULL DEFAULT 1,
+      next_due_date     TEXT NOT NULL,
+      is_active         INTEGER DEFAULT 1,
+      created_at        TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (category_id) REFERENCES categories(id),
+      FOREIGN KEY (payment_method_id) REFERENCES payment_methods(id)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(expense_date);
     CREATE INDEX IF NOT EXISTS idx_expenses_category ON expenses(category_id);
     CREATE INDEX IF NOT EXISTS idx_categories_parent ON categories(parent_id);
     CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
     CREATE INDEX IF NOT EXISTS idx_resets_email ON password_resets(email);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_budgets_category ON budgets(category_id);
+    CREATE INDEX IF NOT EXISTS idx_recurring_due ON recurring_transactions(next_due_date);
   `);
 
   // Migrate legacy moneyguide.db if moolah.db is empty
@@ -160,6 +188,12 @@ export function initializeDatabase(): void {
       seedIncomeCategories(database);
     }
   }
+
+  // Clean up any previously created mock data
+  try {
+    database.execSync("DELETE FROM budgets WHERE id LIKE 'b-%';");
+    database.execSync("DELETE FROM recurring_transactions WHERE id LIKE 'rec-%';");
+  } catch {}
 }
 
 /**
@@ -227,6 +261,143 @@ function seedIncomeCategories(database: SQLite.SQLiteDatabase): void {
 }
 
 /**
+ * Export all expenses as formatted CSV string
+ */
+export function exportExpensesToCSV(): string {
+  const database = getDatabase();
+  const rows = database.getAllSync<any>(`
+    SELECT 
+      e.expense_date as date,
+      e.type as type,
+      e.amount as amount,
+      c.name as category,
+      COALESCE(p.name, 'None') as parent_category,
+      COALESCE(pm.name, 'Unspecified') as payment_method,
+      COALESCE(REPLACE(REPLACE(e.note, '\n', ' '), ',', ';'), '') as note
+    FROM expenses e
+    LEFT JOIN categories c ON e.category_id = c.id
+    LEFT JOIN categories p ON c.parent_id = p.id
+    LEFT JOIN payment_methods pm ON e.payment_method_id = pm.id
+    ORDER BY e.expense_date DESC
+  `);
+
+  const headers = ['Date', 'Type', 'Amount', 'Category', 'Parent Category', 'Payment Method', 'Note'];
+  const csvLines = [headers.join(',')];
+
+  rows.forEach((row) => {
+    csvLines.push([
+      `"${row.date}"`,
+      `"${row.type}"`,
+      row.amount,
+      `"${row.category || ''}"`,
+      `"${row.parent_category || ''}"`,
+      `"${row.payment_method || ''}"`,
+      `"${row.note || ''}"`,
+    ].join(','));
+  });
+
+  return csvLines.join('\n');
+}
+
+/**
+ * Export complete database as JSON string for backup
+ */
+export function exportAllDataJSON(): string {
+  const database = getDatabase();
+  const expenses = database.getAllSync('SELECT * FROM expenses');
+  const categories = database.getAllSync('SELECT * FROM categories');
+  const paymentMethods = database.getAllSync('SELECT * FROM payment_methods');
+  const budgets = database.getAllSync('SELECT * FROM budgets');
+  const recurring = database.getAllSync('SELECT * FROM recurring_transactions');
+  const preferences = database.getAllSync('SELECT * FROM user_preferences');
+
+  return JSON.stringify(
+    {
+      version: '1.0.0',
+      exported_at: new Date().toISOString(),
+      expenses,
+      categories,
+      paymentMethods,
+      budgets,
+      recurring,
+      preferences,
+    },
+    null,
+    2,
+  );
+}
+
+/**
+ * Import database from JSON string
+ */
+export function importAllDataJSON(jsonStr: string): boolean {
+  try {
+    const data = JSON.parse(jsonStr);
+    const database = getDatabase();
+
+    if (data.expenses && Array.isArray(data.expenses)) {
+      database.execSync('DELETE FROM expenses;');
+      const expStmt = database.prepareSync(
+        'INSERT OR REPLACE INTO expenses (id, type, amount, category_id, payment_method_id, note, receipt_image_uri, expense_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      );
+      data.expenses.forEach((e: any) => {
+        expStmt.executeSync(
+          e.id,
+          e.type || 'expense',
+          e.amount,
+          e.category_id,
+          e.payment_method_id || null,
+          e.note || null,
+          e.receipt_image_uri || null,
+          e.expense_date,
+          e.created_at || new Date().toISOString(),
+          e.updated_at || new Date().toISOString(),
+        );
+      });
+      expStmt.finalizeSync();
+    }
+
+    if (data.budgets && Array.isArray(data.budgets)) {
+      database.execSync('DELETE FROM budgets;');
+      const bStmt = database.prepareSync(
+        'INSERT OR REPLACE INTO budgets (id, category_id, amount, period) VALUES (?, ?, ?, ?)',
+      );
+      data.budgets.forEach((b: any) => {
+        bStmt.executeSync(b.id, b.category_id, b.amount, b.period || 'monthly');
+      });
+      bStmt.finalizeSync();
+    }
+
+    if (data.recurring && Array.isArray(data.recurring)) {
+      database.execSync('DELETE FROM recurring_transactions;');
+      const rStmt = database.prepareSync(
+        'INSERT OR REPLACE INTO recurring_transactions (id, type, name, amount, category_id, payment_method_id, frequency, billing_day, next_due_date, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      );
+      data.recurring.forEach((r: any) => {
+        rStmt.executeSync(
+          r.id,
+          r.type || 'expense',
+          r.name,
+          r.amount,
+          r.category_id,
+          r.payment_method_id || null,
+          r.frequency || 'monthly',
+          r.billing_day || 1,
+          r.next_due_date,
+          r.is_active ?? 1,
+        );
+      });
+      rStmt.finalizeSync();
+    }
+
+    return true;
+  } catch (err) {
+    console.error('Import failed:', err);
+    return false;
+  }
+}
+
+/**
  * Reset the database (for development/settings)
  */
 export function resetDatabase(): void {
@@ -236,6 +407,8 @@ export function resetDatabase(): void {
     DELETE FROM categories;
     DELETE FROM payment_methods;
     DELETE FROM user_preferences;
+    DELETE FROM budgets;
+    DELETE FROM recurring_transactions;
   `);
   seedDefaultData(database);
 }

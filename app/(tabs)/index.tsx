@@ -15,6 +15,9 @@ import { useRouter } from 'expo-router';
 import { useTheme } from '../../hooks/useTheme';
 import { useAnalytics } from '../../hooks/useAnalytics';
 import { useExpenses } from '../../hooks/useExpenses';
+import { useBudgets } from '../../hooks/useBudgets';
+import { useRecurring } from '../../hooks/useRecurring';
+import * as Haptics from 'expo-haptics';
 import { formatCurrency, getDateLabel } from '../../lib/utils';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
@@ -22,6 +25,8 @@ export default function DashboardScreen() {
   const { colors } = useTheme();
   const { summary, categorySpending, loading: analyticsLoading } = useAnalytics();
   const { expenses, loading: expensesLoading } = useExpenses(10);
+  const { totals: budgetTotals, budgets } = useBudgets();
+  const { upcoming, markAsPaid } = useRecurring();
   const [refreshing, setRefreshing] = useState(false);
   const router = useRouter();
 
@@ -136,6 +141,163 @@ export default function DashboardScreen() {
             </View>
           </View>
         </Animated.View>
+
+        {/* Monthly Budget Tracker Card */}
+        {budgetTotals.totalBudget > 0 && (
+          <Animated.View
+            entering={FadeInDown.duration(400).delay(120)}
+            style={[styles.budgetWidgetCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          >
+            <View style={styles.budgetWidgetHeader}>
+              <View>
+                <Text style={[styles.budgetWidgetLabel, { color: colors.textMuted }]}>
+                  MONTHLY BUDGET
+                </Text>
+                <Text style={[styles.budgetWidgetAmount, { color: colors.text }]}>
+                  {formatCurrency(budgetTotals.totalSpent)}
+                  <Text style={[styles.budgetWidgetTotal, { color: colors.textMuted }]}>
+                    {' '}/ {formatCurrency(budgetTotals.totalBudget)}
+                  </Text>
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.budgetManageBtn, { backgroundColor: colors.surfaceAlt }]}
+                onPress={() => router.push('/(modals)/budget-manager')}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.budgetManageText, { color: colors.textSecondary }]}>
+                  Manage
+                </Text>
+                <Ionicons name="chevron-forward" size={14} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Progress track */}
+            <View style={[styles.progressTrack, { backgroundColor: colors.surfaceAlt }]}>
+              <View
+                style={[
+                  styles.progressFill,
+                  {
+                    width: `${Math.min(budgetTotals.overallPercentage, 100)}%`,
+                    backgroundColor:
+                      budgetTotals.overallPercentage >= 100
+                        ? colors.danger
+                        : budgetTotals.overallPercentage >= 80
+                        ? colors.warning
+                        : colors.primary,
+                  },
+                ]}
+              />
+            </View>
+
+            <View style={styles.budgetFooterRow}>
+              <Text style={[styles.budgetFooterText, { color: colors.textMuted }]}>
+                {budgetTotals.overallPercentage}% of monthly limit
+              </Text>
+              <Text
+                style={[
+                  styles.budgetFooterText,
+                  {
+                    color: budgetTotals.totalRemaining > 0 ? colors.success : colors.danger,
+                    fontWeight: '600',
+                  },
+                ]}
+              >
+                {budgetTotals.totalRemaining > 0
+                  ? `${formatCurrency(budgetTotals.totalRemaining)} remaining`
+                  : 'Over budget'}
+              </Text>
+            </View>
+          </Animated.View>
+        )}
+
+        {/* Upcoming Subscriptions & Bills Widget */}
+        {upcoming.length > 0 && (
+          <Animated.View entering={FadeInDown.duration(400).delay(140)} style={styles.sectionBlock}>
+            <View style={styles.sectionHeader}>
+              <View style={styles.rowAlign}>
+                <Ionicons name="repeat" size={15} color={colors.primary} style={{ marginRight: 6 }} />
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>Upcoming Bills</Text>
+              </View>
+              <TouchableOpacity onPress={() => router.push('/(modals)/recurring-manager')}>
+                <Text style={[styles.seeAllText, { color: colors.textMuted }]}>Manage</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.billsScroll}>
+              {upcoming.slice(0, 4).map((bill) => {
+                const isUrgent = bill.daysLeft <= 3;
+                return (
+                  <View
+                    key={bill.id}
+                    style={[
+                      styles.billChip,
+                      {
+                        backgroundColor: colors.surface,
+                        borderColor: isUrgent ? `${colors.warning}80` : colors.border,
+                      },
+                    ]}
+                  >
+                    <View style={styles.billChipTop}>
+                      <View
+                        style={[
+                          styles.billIconCircle,
+                          { backgroundColor: `${bill.category_color || colors.primary}20` },
+                        ]}
+                      >
+                        <Ionicons
+                          name={(bill.category_icon as any) || 'calendar'}
+                          size={14}
+                          color={bill.category_color || colors.primary}
+                        />
+                      </View>
+                      <View
+                        style={[
+                          styles.chipDueBadge,
+                          {
+                            backgroundColor: isUrgent
+                              ? `${colors.warning}20`
+                              : colors.surfaceAlt,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.chipDueText,
+                            {
+                              color: isUrgent ? colors.warning : colors.textMuted,
+                            },
+                          ]}
+                        >
+                          {bill.dueLabel}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <Text style={[styles.billName, { color: colors.text }]} numberOfLines={1}>
+                      {bill.name}
+                    </Text>
+                    <Text style={[styles.billAmount, { color: colors.text }]}>
+                      {formatCurrency(bill.amount)}
+                    </Text>
+
+                    <TouchableOpacity
+                      style={[styles.quickPayBtn, { backgroundColor: colors.surfaceAlt }]}
+                      onPress={() => {
+                        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                        markAsPaid(bill);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="checkmark-circle-outline" size={13} color={colors.success} />
+                      <Text style={[styles.quickPayText, { color: colors.text }]}>Mark Paid</Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+            </ScrollView>
+          </Animated.View>
+        )}
 
         {/* Top Categories */}
         {categorySpending.length > 0 && (
@@ -489,5 +651,120 @@ const styles = StyleSheet.create({
   },
   bottomSpacer: {
     height: 24,
+  },
+  rowAlign: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  budgetWidgetCard: {
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    marginBottom: 20,
+  },
+  budgetWidgetHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  budgetWidgetLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  budgetWidgetAmount: {
+    fontSize: 18,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  budgetWidgetTotal: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  budgetManageBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    gap: 2,
+  },
+  budgetManageText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  progressTrack: {
+    height: 6,
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  budgetFooterRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  budgetFooterText: {
+    fontSize: 11,
+  },
+  billsScroll: {
+    flexDirection: 'row',
+    marginHorizontal: -4,
+  },
+  billChip: {
+    width: 154,
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    marginHorizontal: 4,
+    justifyContent: 'space-between',
+  },
+  billChipTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  billIconCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chipDueBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  chipDueText: {
+    fontSize: 9,
+    fontWeight: '700',
+  },
+  billName: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  billAmount: {
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 10,
+  },
+  quickPayBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 6,
+    borderRadius: 8,
+    gap: 4,
+  },
+  quickPayText: {
+    fontSize: 11,
+    fontWeight: '600',
   },
 });

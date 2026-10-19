@@ -2,29 +2,45 @@
 // MoneyGuide — Utility Functions
 // ============================================================
 import { format, isToday, isYesterday, startOfWeek, startOfMonth, parseISO } from 'date-fns';
-import { CURRENCY, DATE_FORMATS } from './constants';
+import { CURRENCY, SUPPORTED_CURRENCIES, DATE_FORMATS } from './constants';
+import { useAppStore } from '../stores/app-store';
 
 /**
- * Format a number as Philippine Peso currency
+ * Get active currency configuration
  */
-export function formatCurrency(amount: number): string {
-  return `${CURRENCY.symbol}${amount.toLocaleString('en-PH', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+export function getCurrencyConfig(code?: string) {
+  const activeCode = code || (typeof useAppStore?.getState === 'function' ? useAppStore.getState().currency : 'PHP') || 'PHP';
+  return SUPPORTED_CURRENCIES[activeCode] || CURRENCY;
 }
 
 /**
- * Format a number as compact currency (e.g., ₱1.2K)
+ * Format a number as currency using active or specified currency
  */
-export function formatCurrencyCompact(amount: number): string {
-  if (amount >= 1000000) {
-    return `${CURRENCY.symbol}${(amount / 1000000).toFixed(1)}M`;
+export function formatCurrency(amount: number, currencyCode?: string): string {
+  const curr = getCurrencyConfig(currencyCode);
+  const isNegative = amount < 0;
+  const abs = Math.abs(amount);
+  const formatted = abs.toLocaleString(curr.locale, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  return `${isNegative ? '-' : ''}${curr.symbol}${formatted}`;
+}
+
+/**
+ * Format a number as compact currency (e.g., ₱1.2K or $1.2K)
+ */
+export function formatCurrencyCompact(amount: number, currencyCode?: string): string {
+  const curr = getCurrencyConfig(currencyCode);
+  const isNegative = amount < 0;
+  const abs = Math.abs(amount);
+  if (abs >= 1000000) {
+    return `${isNegative ? '-' : ''}${curr.symbol}${(abs / 1000000).toFixed(1)}M`;
   }
-  if (amount >= 1000) {
-    return `${CURRENCY.symbol}${(amount / 1000).toFixed(1)}K`;
+  if (abs >= 1000) {
+    return `${isNegative ? '-' : ''}${curr.symbol}${(abs / 1000).toFixed(1)}K`;
   }
-  return formatCurrency(amount);
+  return formatCurrency(amount, currencyCode);
 }
 
 /**

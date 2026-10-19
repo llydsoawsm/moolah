@@ -201,6 +201,18 @@ export const CURRENCY = {
   locale: 'en-PH',
 };
 
+/** List of supported currencies in Moolah */
+export const SUPPORTED_CURRENCIES: Record<string, { symbol: string; code: string; name: string; locale: string }> = {
+  PHP: { symbol: '₱', code: 'PHP', name: 'Philippine Peso', locale: 'en-PH' },
+  USD: { symbol: '$', code: 'USD', name: 'US Dollar', locale: 'en-US' },
+  EUR: { symbol: '€', code: 'EUR', name: 'Euro', locale: 'de-DE' },
+  GBP: { symbol: '£', code: 'GBP', name: 'British Pound', locale: 'en-GB' },
+  JPY: { symbol: '¥', code: 'JPY', name: 'Japanese Yen', locale: 'ja-JP' },
+  CAD: { symbol: 'CA$', code: 'CAD', name: 'Canadian Dollar', locale: 'en-CA' },
+  AUD: { symbol: 'AU$', code: 'AUD', name: 'Australian Dollar', locale: 'en-AU' },
+  SGD: { symbol: 'S$', code: 'SGD', name: 'Singapore Dollar', locale: 'en-SG' },
+};
+
 /** Default user preferences */
 export const DEFAULT_PREFERENCES: Record<string, string> = {
   theme: 'dark' as ThemeName,
