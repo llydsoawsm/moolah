@@ -21,29 +21,31 @@ jobs:
           node-version: 22
           cache: 'npm'
 
-      - name: 📦 Install Dependencies
+      - name: 💎 Setup Ruby & CocoaPods
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+
+      - name: 📦 Install CocoaPods Gem
+        run: |
+          gem install cocoapods --no-document
+          pod --version
+
+      - name: 📦 Install NPM Dependencies
         run: npm install --legacy-peer-deps
 
       - name: 🛠️ Expo Prebuild iOS
-        run: |
-          npx expo prebuild --platform ios --clean --no-install
+        run: npx expo prebuild --platform ios --clean --no-install
 
-      - name: 🔨 Setup CocoaPods & Install
+      - name: 🔨 Install CocoaPods Dependencies
         run: |
-          echo "=== CocoaPods Diagnostic ==="
-          which pod || true
-          pod --version || true
           cd ios
-          pod install > ../pod_install.log 2>&1 || {
-            echo "=== POD INSTALL FAILED. LOGS: ==="
-            cat ../pod_install.log
-            exit 1
-          }
+          pod install
 
       - name: 🏗️ Compile Xcode Project (Unsigned Release)
         run: |
           WORKSPACE_PATH=$(ls -d ios/*.xcworkspace | head -n 1)
-          SCHEME_NAME=$(xcodebuild -workspace "$WORKSPACE_PATH" -list | awk '/Schemes:/{getline; print $1}')
+          SCHEME_NAME=$(xcodebuild -workspace "$WORKSPACE_PATH" -list -json | node -e "const data = JSON.parse(require('fs').readFileSync(0, 'utf8')); console.log(data.workspace.schemes[0]);")
           echo "Building workspace: $WORKSPACE_PATH with scheme: $SCHEME_NAME"
           
           xcodebuild -workspace "$WORKSPACE_PATH" \
@@ -70,3 +72,13 @@ jobs:
           name: moolah-ios-ipa
           path: moolah.ipa
           retention-days: 14
+
+      - name: 📤 Upload Logs on Failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-failure-logs
+          path: |
+            build/Logs
+            ios/Podfile.lock
+          if-no-files-found: ignore
