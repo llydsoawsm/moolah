@@ -49,6 +49,12 @@ export default function SettingsScreen() {
   const biometricEnabled = useAppStore((s) => s.biometricEnabled);
   const setBiometricEnabled = useAppStore((s) => s.setBiometricEnabled);
 
+  // AI Copilot
+  const geminiApiKey = useAppStore((s) => s.geminiApiKey);
+  const setGeminiApiKey = useAppStore((s) => s.setGeminiApiKey);
+  const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+  const [apiKeyVal, setApiKeyVal] = useState(geminiApiKey || '');
+
   // PIN Form
   const [showPinSetup, setShowPinSetup] = useState(false);
   const [pinInput, setPinInput] = useState('');
@@ -586,6 +592,55 @@ export default function SettingsScreen() {
           </View>
         </Animated.View>
 
+        {/* AI Financial Copilot Section */}
+        <Animated.View entering={FadeInDown.duration(400).delay(250)}>
+          <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>AI FINANCIAL COPILOT</Text>
+          <View style={[styles.settingsGroup, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            {/* Open AI Copilot */}
+            <TouchableOpacity
+              style={styles.settingRow}
+              onPress={() => router.push('/(modals)/ai-copilot')}
+              activeOpacity={0.7}
+            >
+              <View style={styles.settingLeft}>
+                <View style={[styles.settingIcon, { backgroundColor: colors.primary + '18' }]}>
+                  <Ionicons name="sparkles" size={16} color={colors.primary} />
+                </View>
+                <View>
+                  <Text style={[styles.settingTitle, { color: colors.text }]}>Open AI Copilot</Text>
+                  <Text style={[styles.settingSubtitle, { color: colors.textMuted }]}>
+                    Autonomous voice/text financial controller
+                  </Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+            </TouchableOpacity>
+
+            {/* AI Engine & Gemini API Key */}
+            <TouchableOpacity
+              style={[styles.settingRow, styles.settingRowBorder, { borderColor: colors.border }]}
+              onPress={() => {
+                setApiKeyVal(geminiApiKey || '');
+                setShowApiKeyModal(true);
+              }}
+              activeOpacity={0.7}
+            >
+              <View style={styles.settingLeft}>
+                <View style={[styles.settingIcon, { backgroundColor: colors.surfaceAlt }]}>
+                  <Ionicons name="hardware-chip-outline" size={16} color={colors.textSecondary} />
+                </View>
+                <View>
+                  <Text style={[styles.settingTitle, { color: colors.text }]}>AI Engine Mode</Text>
+                  <Text style={[styles.settingSubtitle, { color: geminiApiKey ? '#10B981' : '#8B5CF6' }]}>
+                    {geminiApiKey ? 'Gemini 2.0 (Online Cloud)' : 'Deterministic Engine (Offline Local)'}
+                  </Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
+
         {/* Data Management */}
         <Animated.View entering={FadeInDown.duration(400).delay(280)}>
           <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>DATA & BACKUP</Text>
@@ -707,6 +762,62 @@ export default function SettingsScreen() {
                 );
               })}
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Gemini API Key Modal */}
+      <Modal visible={showApiKeyModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={styles.modalHeaderRow}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>AI Copilot Engine Settings</Text>
+              <TouchableOpacity onPress={() => setShowApiKeyModal(false)}>
+                <Ionicons name="close" size={20} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>
+              Moolah comes with a 100% offline local AI parser and financial coach. To enhance it with cloud Google Gemini 2.0 reasoning, paste your API key below:
+            </Text>
+
+            <TextInput
+              style={[
+                styles.keyInput,
+                { backgroundColor: colors.background, color: colors.text, borderColor: colors.border },
+              ]}
+              placeholder="Paste Google AI Studio Key (AIzaSy...)"
+              placeholderTextColor={colors.textMuted}
+              value={apiKeyVal}
+              onChangeText={setApiKeyVal}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+
+            <View style={styles.apiKeyActions}>
+              <TouchableOpacity
+                style={[styles.modalSecondaryBtn, { borderColor: colors.border }]}
+                onPress={() => {
+                  setApiKeyVal('');
+                  setGeminiApiKey('');
+                  setShowApiKeyModal(false);
+                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                }}
+              >
+                <Text style={{ color: '#EF4444', fontWeight: '600' }}>Reset to Local Offline</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalPrimaryBtn, { backgroundColor: colors.primary }]}
+                onPress={() => {
+                  setGeminiApiKey(apiKeyVal.trim());
+                  setShowApiKeyModal(false);
+                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                }}
+              >
+                <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>Save Key</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -1037,5 +1148,34 @@ const styles = StyleSheet.create({
   currencyCode: {
     fontSize: 12,
     marginTop: 1,
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 14,
+  },
+  keyInput: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 14,
+    marginBottom: 16,
+  },
+  apiKeyActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+  },
+  modalSecondaryBtn: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  modalPrimaryBtn: {
+    borderRadius: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
   },
 });

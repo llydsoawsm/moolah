@@ -115,6 +115,13 @@ export default function RootLayout() {
           }}
         />
         <Stack.Screen
+          name="(modals)/ai-copilot"
+          options={{
+            presentation: 'modal',
+            animation: 'slide_from_bottom',
+          }}
+        />
+        <Stack.Screen
           name="(modals)/receipt-viewer"
           options={{
             presentation: 'fullScreenModal',

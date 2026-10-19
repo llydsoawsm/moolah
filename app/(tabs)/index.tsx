@@ -62,13 +62,27 @@ export default function DashboardScreen() {
             </Text>
             <Text style={[styles.appTitle, { color: colors.text }]}>Overview</Text>
           </View>
-          <TouchableOpacity
-            style={[styles.profileButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
-            onPress={() => router.push('/(tabs)/settings')}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="person-outline" size={18} color={colors.textSecondary} />
-          </TouchableOpacity>
+          <View style={styles.headerRightActions}>
+            <TouchableOpacity
+              style={[
+                styles.aiButton,
+                { backgroundColor: colors.primary + '18', borderColor: colors.primary + '35' },
+              ]}
+              onPress={() => router.push('/(modals)/ai-copilot')}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="sparkles" size={15} color={colors.primary} />
+              <Text style={[styles.aiButtonText, { color: colors.primary }]}>Copilot</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.profileButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              onPress={() => router.push('/(tabs)/settings')}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="person-outline" size={18} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
         </Animated.View>
 
         {/* Minimalist Hero Net Balance & Cash Flow Card */}
@@ -447,6 +461,24 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 20,
+  },
+  headerRightActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  aiButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
+    gap: 5,
+  },
+  aiButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
   dateLabel: {
     fontSize: 11,
