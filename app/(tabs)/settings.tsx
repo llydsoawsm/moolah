@@ -790,7 +790,7 @@ export default function SettingsScreen() {
                 styles.keyInput,
                 { backgroundColor: colors.background, color: colors.text, borderColor: colors.border },
               ]}
-              placeholder="Paste Google AI Studio Key (AIzaSy...)"
+              placeholder="Paste Google AI Studio or Cloud Key..."
               placeholderTextColor={colors.textMuted}
               value={apiKeyVal}
               onChangeText={setApiKeyVal}

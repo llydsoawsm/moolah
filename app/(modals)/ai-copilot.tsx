@@ -500,7 +500,7 @@ export default function AICopilotModal() {
             <Text style={{ fontSize: 12, fontWeight: '700', color: colors.text, marginTop: 4 }}>API Key:</Text>
             <TextInput
               style={[styles.keyInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
-              placeholder="AIzaSy..."
+              placeholder="Paste your API key here..."
               placeholderTextColor={colors.textMuted}
               value={apiKeyInput}
               onChangeText={setApiKeyInput}
