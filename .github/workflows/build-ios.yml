@@ -26,17 +26,21 @@ jobs:
 
       - name: 🛠️ Expo Prebuild iOS
         run: |
-          export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
           npx expo prebuild --platform ios --clean --no-install
 
-      - name: 🔨 Install CocoaPods
+      - name: 🔨 Setup CocoaPods & Install
         run: |
-          export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
-          npx pod-install ios
+          if ! command -v pod &> /dev/null; then
+            echo "Installing CocoaPods via Homebrew..."
+            brew install cocoapods
+          fi
+          echo "CocoaPods located at: $(which pod)"
+          echo "CocoaPods version: $(pod --version)"
+          cd ios
+          pod install
 
       - name: 🏗️ Compile Xcode Project (Unsigned Release)
         run: |
-          export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
           WORKSPACE_PATH=$(ls -d ios/*.xcworkspace | head -n 1)
           SCHEME_NAME=$(xcodebuild -workspace "$WORKSPACE_PATH" -list | awk '/Schemes:/{getline; print $1}')
           echo "Building workspace: $WORKSPACE_PATH with scheme: $SCHEME_NAME"
