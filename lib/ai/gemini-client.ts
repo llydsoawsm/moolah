@@ -99,6 +99,7 @@ export async function sendCopilotMessage(
   query: string,
   apiKey: string,
   chatHistory: ChatMessage[] = [],
+  modelName = 'gemini-3.8',
 ): Promise<CopilotResponse> {
   // 1. First line of defense: Guardrails
   const guard = checkPromptGuardrails(query);
@@ -135,7 +136,15 @@ export async function sendCopilotMessage(
     return processLocalQuery(query);
   }
 
-  // 3. Online Gemini API Request with timeout
+  // 3. Online Gemini API Request with high-model fallback cascade
+  // Priority: User's requested model (e.g. gemini-3.8) -> gemini-2.0-pro-exp-02-05 -> gemini-1.5-pro -> gemini-2.0-flash
+  const modelsToTry = [
+    modelName.trim(),
+    'gemini-2.0-pro-exp-02-05',
+    'gemini-1.5-pro',
+    'gemini-2.0-flash',
+  ].filter((v, i, a) => v && a.indexOf(v) === i);
+
   try {
     const health = executeGetFinancialHealth();
 
@@ -143,7 +152,7 @@ export async function sendCopilotMessage(
       role: 'system',
       parts: [
         {
-          text: `You are Moolah AI Copilot, an autonomous financial intelligence system and SQLite ledger controller.
+          text: `You are Moolah AI Copilot, an autonomous high-tier financial intelligence system and SQLite ledger controller.
 You help users budget, track spending, understand money, and control their app.
 RULES:
 1. STRICT FINANCIAL SCOPE: You ONLY discuss personal finance, budgeting, investments, debt management, and expenses. Politely decline anything outside of finance.
@@ -161,8 +170,6 @@ RULES:
 
     // Format chat contents
     const contents: any[] = [];
-
-    // Keep last 6 messages for context
     const recentHistory = chatHistory.slice(-6);
     for (const msg of recentHistory) {
       if (msg.sender === 'user') {
@@ -171,37 +178,48 @@ RULES:
         contents.push({ role: 'model', parts: [{ text: msg.text }] });
       }
     }
-
-    // Append latest prompt
     contents.push({ role: 'user', parts: [{ text: query }] });
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
+    let activeModelUsed = modelName;
+    let candidate: any = null;
 
-    const response = await fetch(`${GEMINI_API_URL}?key=${encodeURIComponent(apiKey.trim())}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents,
-        system_instruction: systemInstruction,
-        tools: COPILOT_TOOLS,
-        generationConfig: {
-          temperature: 0.2,
-          maxOutputTokens: 800,
-        },
-      }),
-      signal: controller.signal,
-    });
+    for (const currentModel of modelsToTry) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 9000);
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(currentModel)}:generateContent?key=${encodeURIComponent(apiKey.trim())}`;
 
-    clearTimeout(timeout);
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents,
+            system_instruction: systemInstruction,
+            tools: COPILOT_TOOLS,
+            generationConfig: {
+              temperature: 0.2,
+              maxOutputTokens: 1000,
+            },
+          }),
+          signal: controller.signal,
+        });
 
-    if (!response.ok) {
-      console.warn('Gemini API responded with status:', response.status);
-      return processLocalQuery(query);
+        clearTimeout(timeout);
+
+        if (response.ok) {
+          const data = await response.json();
+          candidate = data.candidates?.[0]?.content;
+          if (candidate) {
+            activeModelUsed = currentModel;
+            break;
+          }
+        } else {
+          console.warn(`Model ${currentModel} returned HTTP ${response.status}, trying fallback...`);
+        }
+      } catch (e) {
+        console.warn(`Model ${currentModel} attempt error:`, e);
+      }
     }
-
-    const data = await response.json();
-    const candidate = data.candidates?.[0]?.content;
 
     if (!candidate) {
       return processLocalQuery(query);
@@ -222,7 +240,7 @@ RULES:
       text: text,
       citations: [
         {
-          source: 'Gemini 2.0 Financial Model',
+          source: `Google Gemini (${activeModelUsed})`,
           note: 'Synthesized using real-time economic principles and SQLite context',
         },
         {

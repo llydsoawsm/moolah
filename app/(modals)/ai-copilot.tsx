@@ -44,7 +44,7 @@ const QUICK_PROMPTS = [
 export default function AICopilotModal() {
   const { colors } = useTheme();
   const router = useRouter();
-  const { geminiApiKey, setGeminiApiKey } = useAppStore();
+  const { geminiApiKey, setGeminiApiKey, geminiModel, setGeminiModel } = useAppStore();
 
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -53,7 +53,7 @@ export default function AICopilotModal() {
       id: 'welcome',
       sender: 'assistant',
       text:
-        '👋 Hello! I am your **Moolah Financial Copilot**.\n\nI can directly manage your finances, record transactions, configure monthly category budgets, monitor subscriptions, and provide personalized budgeting coaching (e.g., 50/30/20 rule).\n\n💡 *I work 100% offline using your local SQLite database, or connect to Google Gemini 2.0 when configured.*',
+        `👋 Hello! I am your **Moolah Financial Copilot**.\n\nI can directly manage your finances, record transactions, configure monthly category budgets, monitor subscriptions, and provide personalized budgeting coaching (e.g., 50/30/20 rule).\n\n💡 *I work 100% offline using your local SQLite database, or connect to ${geminiApiKey ? geminiModel : 'Google Gemini (high model)'} when configured.*`,
       engine: geminiApiKey ? 'gemini' : 'local',
       timestamp: Date.now(),
       citations: [
@@ -65,9 +65,10 @@ export default function AICopilotModal() {
     },
   ]);
 
-  // Key config modal state
+  // Key & Model config modal state
   const [keyModalVisible, setKeyModalVisible] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState(geminiApiKey || '');
+  const [modelInput, setModelInput] = useState(geminiModel || 'gemini-3.8');
 
   const scrollRef = useRef<ScrollView>(null);
 
@@ -95,7 +96,7 @@ export default function AICopilotModal() {
     setLoading(true);
 
     try {
-      const response = await sendCopilotMessage(query, geminiApiKey, messages);
+      const response = await sendCopilotMessage(query, geminiApiKey, messages, geminiModel);
 
       const botMsg: ChatMessage = {
         id: generateId(),
@@ -172,6 +173,9 @@ export default function AICopilotModal() {
 
   const handleSaveApiKey = () => {
     setGeminiApiKey(apiKeyInput.trim());
+    if (modelInput.trim()) {
+      setGeminiModel(modelInput.trim());
+    }
     setKeyModalVisible(false);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
@@ -202,7 +206,7 @@ export default function AICopilotModal() {
                 ]}
               />
               <Text style={[styles.engineText, { color: colors.textSecondary }]}>
-                {geminiApiKey ? 'Gemini 2.0 (Online)' : 'Local Engine (Offline)'}
+                {geminiApiKey ? `${geminiModel} (Online)` : 'Local Engine (Offline)'}
               </Text>
               <Ionicons name="settings-outline" size={12} color={colors.textSecondary} style={{ marginLeft: 3 }} />
             </TouchableOpacity>
@@ -435,18 +439,17 @@ export default function AICopilotModal() {
         <View style={styles.modalOverlay}>
           <View style={[styles.modalBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Google Gemini API Key</Text>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Google Gemini Configuration</Text>
               <TouchableOpacity onPress={() => setKeyModalVisible(false)}>
                 <Ionicons name="close" size={20} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
 
             <Text style={[styles.modalHelp, { color: colors.textSecondary }]}>
-              Moolah includes an autonomous **Local Offline Engine** that works without any internet or key.
-              {'\n\n'}
-              If you have a Google AI Studio key, paste it here to activate cloud Gemini 2.0 model reasoning.
+              Enter your Google AI Studio API key and desired Gemini model tier. If offline or without a key, Moolah automatically runs the lightweight Local Engine.
             </Text>
 
+            <Text style={{ fontSize: 12, fontWeight: '700', color: colors.text, marginTop: 4 }}>API Key:</Text>
             <TextInput
               style={[styles.keyInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
               placeholder="AIzaSy..."
@@ -456,6 +459,39 @@ export default function AICopilotModal() {
               autoCapitalize="none"
               autoCorrect={false}
             />
+
+            <Text style={{ fontSize: 12, fontWeight: '700', color: colors.text, marginTop: 4 }}>Gemini Model Name:</Text>
+            <TextInput
+              style={[styles.keyInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+              placeholder="gemini-3.8"
+              placeholderTextColor={colors.textMuted}
+              value={modelInput}
+              onChangeText={setModelInput}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+
+            {/* Quick model selectors */}
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+              {['gemini-3.8', 'gemini-2.0-pro-exp-02-05', 'gemini-1.5-pro'].map((m) => (
+                <TouchableOpacity
+                  key={m}
+                  onPress={() => setModelInput(m)}
+                  style={{
+                    backgroundColor: modelInput === m ? colors.primary + '25' : colors.surfaceAlt,
+                    borderColor: modelInput === m ? colors.primary : colors.border,
+                    borderWidth: 1,
+                    paddingHorizontal: 8,
+                    paddingVertical: 4,
+                    borderRadius: 6,
+                  }}
+                >
+                  <Text style={{ fontSize: 11, color: modelInput === m ? colors.primary : colors.textSecondary, fontWeight: '600' }}>
+                    {m}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
 
             <View style={styles.modalActions}>
               <TouchableOpacity
@@ -473,7 +509,7 @@ export default function AICopilotModal() {
                 style={[styles.modalPrimaryBtn, { backgroundColor: colors.primary }]}
                 onPress={handleSaveApiKey}
               >
-                <Text style={{ color: '#FFFFFF', fontWeight: 'bold' }}>Save Key</Text>
+                <Text style={{ color: '#FFFFFF', fontWeight: 'bold' }}>Save Settings</Text>
               </TouchableOpacity>
             </View>
           </View>

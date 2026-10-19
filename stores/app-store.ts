@@ -46,6 +46,8 @@ interface AppState {
   // AI Copilot
   geminiApiKey: string;
   setGeminiApiKey: (key: string) => void;
+  geminiModel: string;
+  setGeminiModel: (model: string) => void;
 
   // Load preferences from database
   loadPreferences: () => void;
@@ -157,6 +159,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       db.runSync("INSERT OR REPLACE INTO user_preferences (key, value) VALUES ('gemini_api_key', ?)", key);
     } catch {}
   },
+  geminiModel: 'gemini-3.8',
+  setGeminiModel: (model) => {
+    set({ geminiModel: model });
+    try {
+      const db = getDatabase();
+      db.runSync("INSERT OR REPLACE INTO user_preferences (key, value) VALUES ('gemini_model', ?)", model);
+    } catch {}
+  },
 
   // Refresh
   refreshKey: 0,
@@ -196,6 +206,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         rememberMe: rememberMe,
         currentUser: currentUser,
         geminiApiKey: prefs.gemini_api_key || '',
+        geminiModel: prefs.gemini_model || 'gemini-3.8',
       });
 
       // If user is authenticated and has a PIN configured, lock the app until PIN/Biometric is verified
