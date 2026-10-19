@@ -30,14 +30,15 @@ jobs:
 
       - name: 🔨 Setup CocoaPods & Install
         run: |
-          if ! command -v pod &> /dev/null; then
-            echo "Installing CocoaPods via Homebrew..."
-            brew install cocoapods
-          fi
-          echo "CocoaPods located at: $(which pod)"
-          echo "CocoaPods version: $(pod --version)"
+          echo "=== CocoaPods Diagnostic ==="
+          which pod || true
+          pod --version || true
           cd ios
-          pod install
+          pod install > ../pod_install.log 2>&1 || {
+            echo "=== POD INSTALL FAILED. LOGS: ==="
+            cat ../pod_install.log
+            exit 1
+          }
 
       - name: 🏗️ Compile Xcode Project (Unsigned Release)
         run: |
