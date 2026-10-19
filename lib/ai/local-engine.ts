@@ -35,19 +35,123 @@ export interface CopilotResponse {
 
 /**
  * Parses user input locally using regex and deterministic rule templates
- * when offline or when no Gemini API key is configured.
+ * with multi-turn contextual action modifications.
  */
-export function processLocalQuery(query: string): CopilotResponse {
+export function processLocalQuery(query: string, lastAction?: CopilotActionProposal): CopilotResponse {
   const clean = query.trim();
   const lower = clean.toLowerCase();
 
   // ------------------------------------------------------------
-  // 1. Transaction Logging Pattern Detection
+  // 0. Contextual Modification of Previous Action Proposal
   // Examples:
-  // "Add expense 450 lunch gcash"
-  // "Spent 120 coffee"
-  // "Received 25000 salary bank"
-  // "Add 200 taxi and 350 groceries"
+  // "change it to 449/ month of 18"
+  // "make it 300"
+  // "change date to 20th"
+  // "actually 1500"
+  // ------------------------------------------------------------
+  const isModification =
+    lastAction &&
+    (/\b(change|update|make\s*it|instead|actually|adjust|correct|switch|replace|set\s*to)\b/i.test(lower) ||
+      (/\d+/.test(lower) && (lower.includes('/') || lower.includes('month') || lower.includes('day') || lower.includes('of'))));
+
+  if (isModification && lastAction) {
+    if (lastAction.type === 'add_subscription') {
+      const amountMatch = clean.match(/(\d+(?:,\d+)*(?:\.\d+)?)/);
+      const newAmount = amountMatch ? parseFloat(amountMatch[1].replace(/,/g, '')) : lastAction.payload.amount;
+
+      // Extract day: "month of 18", "day 18", "on 18", "18th", or second number
+      const dayMatch = clean.match(/(?:day|on|due|of)\s+(\d{1,2})|\b(\d{1,2})(?:st|nd|rd|th)\b/i);
+      let newDay = lastAction.payload.billing_day;
+      if (dayMatch) {
+        newDay = parseInt(dayMatch[1] || dayMatch[2], 10);
+      } else {
+        const allNums = clean.match(/\b\d+\b/g);
+        if (allNums && allNums.length >= 2) {
+          const second = parseInt(allNums[1], 10);
+          if (second >= 1 && second <= 31) newDay = second;
+        }
+      }
+
+      const updatedPayload: AddSubscriptionParams = {
+        ...lastAction.payload,
+        amount: newAmount,
+        billing_day: newDay,
+      };
+
+      return {
+        engine: 'local',
+        text: `Updated ${lastAction.payload.name}: ₱${newAmount.toLocaleString()}/mo (due ${newDay}th).`,
+        action: {
+          ...lastAction,
+          id: generateId(),
+          title: `Add Subscription: ${lastAction.payload.name}`,
+          description: `₱${newAmount.toLocaleString()} / month on day ${newDay}`,
+          payload: updatedPayload,
+        },
+        citations: [
+          {
+            source: 'Subscription Auditing Best Practice',
+            note: 'Updated recurring parameters',
+          },
+        ],
+      };
+    }
+
+    if (lastAction.type === 'set_budget') {
+      const amountMatch = clean.match(/(\d+(?:,\d+)*(?:\.\d+)?)/);
+      const newAmount = amountMatch ? parseFloat(amountMatch[1].replace(/,/g, '')) : lastAction.payload.amount;
+      const updatedPayload = { ...lastAction.payload, amount: newAmount };
+
+      return {
+        engine: 'local',
+        text: `Updated ${lastAction.payload.category_name} budget cap to ₱${newAmount.toLocaleString()}.`,
+        action: {
+          ...lastAction,
+          id: generateId(),
+          title: `Set Budget: ${lastAction.payload.category_name} (₱${newAmount.toLocaleString()})`,
+          description: `Monthly allowance limit in SQLite`,
+          payload: updatedPayload,
+        },
+        citations: [
+          {
+            source: 'Zero-Based Budgeting Framework',
+            note: 'Adjusted envelope cap',
+          },
+        ],
+      };
+    }
+
+    if (lastAction.type === 'log_transactions') {
+      const amountMatch = clean.match(/(\d+(?:,\d+)*(?:\.\d+)?)/);
+      const newAmount = amountMatch ? parseFloat(amountMatch[1].replace(/,/g, '')) : (lastAction.payload.items?.[0]?.amount || 0);
+      const items = (lastAction.payload.items || []).map((it: any, idx: number) =>
+        idx === 0 ? { ...it, amount: newAmount } : it
+      );
+      const updatedPayload = { items };
+
+      return {
+        engine: 'local',
+        text: `Updated transaction amount to ₱${newAmount.toLocaleString()}.`,
+        action: {
+          ...lastAction,
+          id: generateId(),
+          title: `Log Transaction: ₱${newAmount.toLocaleString()}`,
+          description: `Adjusted amount`,
+          payload: updatedPayload,
+        },
+        citations: [
+          {
+            source: 'Local SQLite Engine',
+            note: 'Adjusted transaction parameter',
+          },
+        ],
+      };
+    }
+  }
+
+  // ------------------------------------------------------------
+  // 1. Transaction Logging Pattern Detection
+  // Examples: "Add expense 450 lunch gcash", "Spent 120 coffee"
   // ------------------------------------------------------------
   const isAddExpense =
     /\b(spent|spend|paid|expense|buy|bought|cost)\b/i.test(lower) ||
@@ -63,7 +167,7 @@ export function processLocalQuery(query: string): CopilotResponse {
         id: generateId(),
         type: 'log_transactions',
         title: `Log ${transactions.length} ${transactions[0].type === 'income' ? 'Income' : 'Expense'}${transactions.length > 1 ? 's' : ''}`,
-        description: `Ready to record ${transactions.length} item(s) totaling ${total.toLocaleString()}`,
+        description: `Total: ₱${total.toLocaleString()}`,
         payload: { items: transactions },
       };
 
@@ -73,12 +177,12 @@ export function processLocalQuery(query: string): CopilotResponse {
 
       return {
         engine: 'local',
-        text: `I've prepared the transaction entry for you:\n\n${breakdown}\n\nTap **Confirm Action** below to save this directly to your Moolah offline database.`,
+        text: `Prepared ${transactions.length} transaction(s):\n${breakdown}`,
         action,
         citations: [
           {
             source: 'Local SQLite Engine',
-            note: 'Parsed deterministic syntax from offline rules',
+            note: 'Parsed deterministic syntax',
           },
         ],
       };
@@ -87,7 +191,7 @@ export function processLocalQuery(query: string): CopilotResponse {
 
   // ------------------------------------------------------------
   // 2. Category Creation Pattern
-  // Examples: "Add category Freelance income", "Create category Gym expense #EF4444"
+  // Examples: "Add category Freelance income"
   // ------------------------------------------------------------
   if (/\b(create|add|new)\s+category\b/i.test(lower)) {
     const catMatch = clean.match(/(?:create|add|new)\s+category\s+([^,]+)/i);
@@ -103,7 +207,7 @@ export function processLocalQuery(query: string): CopilotResponse {
         };
         return {
           engine: 'local',
-          text: `I prepared a new ${isIncome ? 'Income' : 'Expense'} category **"${name}"** for your budget.`,
+          text: `Prepared category: **${name}** (${isIncome ? 'Income' : 'Expense'}).`,
           action: {
             id: generateId(),
             type: 'create_category',
@@ -114,7 +218,7 @@ export function processLocalQuery(query: string): CopilotResponse {
           citations: [
             {
               source: 'Local Moolah Taxonomy',
-              note: 'Categories are stored securely on-device in SQLite',
+              note: 'Stored on-device in SQLite',
             },
           ],
         };
@@ -124,13 +228,12 @@ export function processLocalQuery(query: string): CopilotResponse {
 
   // ------------------------------------------------------------
   // 3. Set Budget Limit Pattern
-  // Examples: "Set budget for Food to 5000", "Budget 3000 for Transport"
+  // Examples: "Set budget for Food to 5000"
   // ------------------------------------------------------------
   if (/\bbudget\b/i.test(lower) && /\d+/.test(lower)) {
     const amountMatch = clean.match(/(\d+(?:,\d+)*(?:\.\d+)?)/);
     const amount = amountMatch ? parseFloat(amountMatch[1].replace(/,/g, '')) : 0;
     
-    // Find category name
     const forMatch = clean.match(/(?:for|on)\s+([a-zA-Z\s]+?)(?:\s+to|\s+at|\s+\d|$)/i);
     const catName = forMatch ? forMatch[1].trim() : 'Food';
 
@@ -141,7 +244,7 @@ export function processLocalQuery(query: string): CopilotResponse {
       };
       return {
         engine: 'local',
-        text: `I can set a monthly spending cap of **₱${amount.toLocaleString()}** for **${catName}**.`,
+        text: `Prepared ${catName} budget cap: ₱${amount.toLocaleString()}/month.`,
         action: {
           id: generateId(),
           type: 'set_budget',
@@ -161,16 +264,15 @@ export function processLocalQuery(query: string): CopilotResponse {
 
   // ------------------------------------------------------------
   // 4. Add Recurring Subscription / Bill
-  // Examples: "Add subscription Netflix 549 on day 15", "Add bill Meralco 3500 due 20"
+  // Examples: "Add subscription Netflix 549 on day 15"
   // ------------------------------------------------------------
   if (/\b(subscription|bill|recurring)\b/i.test(lower)) {
     const amountMatch = clean.match(/(\d+(?:,\d+)*(?:\.\d+)?)/);
     const amount = amountMatch ? parseFloat(amountMatch[1].replace(/,/g, '')) : 0;
-    const dayMatch = clean.match(/(?:day|on|due)\s+(\d{1,2})/i);
-    const billingDay = dayMatch ? parseInt(dayMatch[1], 10) : 1;
+    const dayMatch = clean.match(/(?:day|on|due|of)\s+(\d{1,2})|\b(\d{1,2})(?:st|nd|rd|th)\b/i);
+    const billingDay = dayMatch ? parseInt(dayMatch[1] || dayMatch[2], 10) : 1;
 
-    // Extract name
-    const nameMatch = clean.match(/(?:subscription|bill|recurring)\s+([a-zA-Z0-9\s]+?)(?:\s+\d|\s+day|\s+on|\s+due|$)/i);
+    const nameMatch = clean.match(/(?:subscription|bill|recurring)\s+([a-zA-Z0-9\s]+?)(?:\s+\d|\s+day|\s+on|\s+due|\s+of|$)/i);
     const name = nameMatch && nameMatch[1] ? nameMatch[1].trim() : 'Recurring Bill';
 
     if (amount > 0) {
@@ -181,7 +283,7 @@ export function processLocalQuery(query: string): CopilotResponse {
       };
       return {
         engine: 'local',
-        text: `I've prepared a recurring subscription for **${name}** (₱${amount.toLocaleString()} due every ${billingDay}th of the month).`,
+        text: `Prepared subscription: **${name}** — ₱${amount.toLocaleString()}/mo (due ${billingDay}th).`,
         action: {
           id: generateId(),
           type: 'add_subscription',
@@ -201,7 +303,6 @@ export function processLocalQuery(query: string): CopilotResponse {
 
   // ------------------------------------------------------------
   // 5. Financial Health / Insights & 50/30/20 Coaching
-  // Examples: "How to budget wisely?", "Give me insights", "Review my finances", "50/30/20"
   // ------------------------------------------------------------
   const health = executeGetFinancialHealth();
   const savingsRate = health.savingsRate;
@@ -209,27 +310,26 @@ export function processLocalQuery(query: string): CopilotResponse {
 
   let advice = '';
   if (health.income === 0 && health.expenses === 0) {
-    advice = `You don't have any income or expense records for ${health.month} yet in your offline database.\n\nTo build a healthy budget, the **50/30/20 Rule** recommends allocating:\n• **50% Needs**: Essential housing, utilities, groceries, and commute\n• **30% Wants**: Discretionary dining, hobbies, and streaming\n• **20% Savings & Debt**: Emergency fund and investments\n\nTry telling me: *"Add expense 150 coffee"* or *"Received 30000 salary bank"* to begin!`;
+    advice = `No transactions recorded for ${health.month} yet.\n\n**50/30/20 Benchmark:**\n• 50% Needs (Groceries, bills, rent)\n• 30% Wants (Dining, streaming)\n• 20% Savings (Emergency fund)\n\nTry: *"Add expense 150 coffee"* or *"Received 30000 salary bank"*.`;
   } else {
-    advice = `### 📊 Financial Health Snapshot (${health.month})\n\n` +
-      `• **Total Income:** ₱${health.income.toLocaleString()}\n` +
-      `• **Total Expenses:** ₱${health.expenses.toLocaleString()}\n` +
-      `• **Net Balance:** ${net >= 0 ? '+' : ''}₱${net.toLocaleString()} (${savingsRate}% savings rate)\n` +
-      `• **Daily Burn Rate:** ~₱${health.burnRatePerDay.toLocaleString()}/day (${health.daysRemainingInMonth} days left in month)\n` +
-      `• **Projected Month-End:** ₱${health.projectedMonthEndBalance.toLocaleString()}\n\n`;
+    advice = `### 📊 Financial Health (${health.month})\n` +
+      `• **Income:** ₱${health.income.toLocaleString()} | **Expenses:** ₱${health.expenses.toLocaleString()}\n` +
+      `• **Net:** ${net >= 0 ? '+' : ''}₱${net.toLocaleString()} (${savingsRate}% savings rate)\n` +
+      `• **Daily Burn:** ~₱${health.burnRatePerDay.toLocaleString()}/day (${health.daysRemainingInMonth}d left)\n` +
+      `• **Projected End:** ₱${health.projectedMonthEndBalance.toLocaleString()}\n\n`;
 
     if (health.topCategories.length > 0) {
-      advice += `**Top Spending Drivers:**\n` +
-        health.topCategories.map((c) => `• ${c.name}: ₱${c.amount.toLocaleString()} (${c.percentage}%)`).join('\n') +
+      advice += `**Top Spend:** ` +
+        health.topCategories.slice(0, 3).map((c) => `${c.name} (₱${c.amount.toLocaleString()})`).join(', ') +
         `\n\n`;
     }
 
     if (savingsRate >= 20) {
-      advice += `⭐ **Great Job!** Your savings rate (${savingsRate}%) exceeds the recommended **20% threshold** of the 50/30/20 rule. Keep channeling this surplus into high-yield savings or retirement reserves.`;
+      advice += `⭐ Savings rate (${savingsRate}%) is on track with the 50/30/20 guideline.`;
     } else if (savingsRate > 0) {
-      advice += `💡 **Optimization Tip:** Your current savings rate is ${savingsRate}%. To reach the standard 20% savings benchmark, review your top discretionary expense (${health.topCategories[0]?.name || 'discretionary spend'}) and consider setting a budget cap.`;
+      advice += `💡 Current savings rate is ${savingsRate}%. Target is 20%.`;
     } else {
-      advice += `⚠️ **Deficit Alert:** Your expenses currently exceed your recorded income by ₱${Math.abs(net).toLocaleString()}. Pause non-essential purchases and consider trimming subscriptions.`;
+      advice += `⚠️ Deficit of ₱${Math.abs(net).toLocaleString()} this month. Pause discretionary expenses.`;
     }
   }
 
@@ -238,12 +338,12 @@ export function processLocalQuery(query: string): CopilotResponse {
     text: advice,
     citations: [
       {
-        source: 'Elizabeth Warren & Amelia Warren Tyagi (All Your Worth)',
-        note: '50/30/20 Balanced Spending Formula (Needs/Wants/Savings)',
+        source: 'Elizabeth Warren (All Your Worth)',
+        note: '50/30/20 Rule',
       },
       {
-        source: 'Moolah SQLite Database',
-        note: `Real ledger records for ${health.month}`,
+        source: 'Moolah SQLite',
+        note: `Ledger data (${health.month})`,
       },
     ],
   };
@@ -256,7 +356,6 @@ export function processLocalQuery(query: string): CopilotResponse {
 function parseTransactionItems(text: string, defaultType: 'expense' | 'income'): LogTransactionParams[] {
   const items: LogTransactionParams[] = [];
   
-  // Split by newline or commas if multiple items are mentioned
   const segments = text
     .replace(/\band\b/gi, ',')
     .split(/[\n,;]+/)
@@ -270,13 +369,11 @@ function parseTransactionItems(text: string, defaultType: 'expense' | 'income'):
     const amount = parseFloat(amountMatch[1].replace(/,/g, ''));
     if (isNaN(amount) || amount <= 0) continue;
 
-    // Check payment method
     let paymentMethod = 'Cash';
     if (/\b(gcash)\b/i.test(seg)) paymentMethod = 'GCash';
     else if (/\b(maya|paymaya)\b/i.test(seg)) paymentMethod = 'Maya';
     else if (/\b(bank|bdo|bpi|metrobank|unionbank|card|credit|debit)\b/i.test(seg)) paymentMethod = 'Bank Account';
 
-    // Check category keywords
     let categoryName = defaultType === 'income' ? 'Salary' : 'General';
     if (/\b(coffee|lunch|dinner|breakfast|food|burger|snack|restaurant|dining|jollibee|mcdo)\b/i.test(seg)) {
       categoryName = 'Food & Dining';
@@ -294,7 +391,6 @@ function parseTransactionItems(text: string, defaultType: 'expense' | 'income'):
       categoryName = 'Freelance';
     }
 
-    // Clean note description
     const cleanedNote = seg
       .replace(/(\badd\b|\bspent\b|\bspend\b|\bpaid\b|\bexpense\b|\breceived\b|\bearned\b)/gi, '')
       .replace(/\d+(?:,\d+)*(?:\.\d+)?/g, '')

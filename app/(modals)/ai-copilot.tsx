@@ -29,6 +29,12 @@ import {
   executeSetBudget,
   executeAddSubscription,
 } from '../../lib/ai/actions-dispatcher';
+import {
+  getOrCreateActiveSession,
+  createNewSession,
+  loadSessionMessages,
+  persistMessage,
+} from '../../lib/ai/chat-sessions';
 import { generateId } from '../../lib/utils';
 import type { CopilotActionProposal } from '../../lib/ai/local-engine';
 import type { EmergencyHotline } from '../../lib/ai/guardrails';
@@ -44,33 +50,41 @@ const QUICK_PROMPTS = [
 export default function AICopilotModal() {
   const { colors } = useTheme();
   const router = useRouter();
+  const currentUser = useAppStore((s) => s.currentUser);
+  const userId = currentUser?.id || 'guest';
   const { geminiApiKey, setGeminiApiKey, geminiModel, setGeminiModel } = useAppStore();
 
+  const [sessionId, setSessionId] = useState<string>('');
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: 'welcome',
-      sender: 'assistant',
-      text:
-        `👋 Hello! I am your **Moolah Financial Copilot**.\n\nI can directly manage your finances, record transactions, configure monthly category budgets, monitor subscriptions, and provide personalized budgeting coaching (e.g., 50/30/20 rule).\n\n💡 *I work 100% offline using your local SQLite database, or connect to ${geminiApiKey ? geminiModel : 'Google Gemini (high model)'} when configured.*`,
-      engine: geminiApiKey ? 'gemini' : 'local',
-      timestamp: Date.now(),
-      citations: [
-        {
-          source: 'Moolah Core Safety System',
-          note: 'Financial-only scope with verified emergency hotline safeguards',
-        },
-      ],
-    },
-  ]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
 
   // Key & Model config modal state
   const [keyModalVisible, setKeyModalVisible] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState(geminiApiKey || '');
-  const [modelInput, setModelInput] = useState(geminiModel || 'gemini-3.8');
+  const [modelInput, setModelInput] = useState(geminiModel || 'gemini-3.8-flash');
 
   const scrollRef = useRef<ScrollView>(null);
+
+  // Load or create session for the current authenticated user
+  useEffect(() => {
+    const sid = getOrCreateActiveSession(userId);
+    setSessionId(sid);
+    const stored = loadSessionMessages(sid);
+    if (stored.length > 0) {
+      setMessages(stored);
+    } else {
+      const welcome: ChatMessage = {
+        id: 'welcome',
+        sender: 'assistant',
+        text: '👋 Hi! I am your Moolah Copilot. Ask me about your finances or tell me to log expenses, set budgets, and track bills.',
+        engine: geminiApiKey ? 'gemini' : 'local',
+        timestamp: Date.now(),
+      };
+      setMessages([welcome]);
+      persistMessage(sid, userId, welcome);
+    }
+  }, [userId]);
 
   useEffect(() => {
     setTimeout(() => {
@@ -78,12 +92,30 @@ export default function AICopilotModal() {
     }, 150);
   }, [messages, loading]);
 
+  const handleNewSession = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const newSid = createNewSession(userId);
+    setSessionId(newSid);
+    const welcome: ChatMessage = {
+      id: generateId(),
+      sender: 'assistant',
+      text: 'New session started. How can I assist with your finances?',
+      engine: geminiApiKey ? 'gemini' : 'local',
+      timestamp: Date.now(),
+    };
+    setMessages([welcome]);
+    persistMessage(newSid, userId, welcome);
+  };
+
   const handleSend = async (textToSend?: string) => {
     const query = (textToSend || input).trim();
     if (!query || loading) return;
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setInput('');
+
+    const activeSid = sessionId || getOrCreateActiveSession(userId);
+    if (!sessionId) setSessionId(activeSid);
 
     const userMsg: ChatMessage = {
       id: generateId(),
@@ -93,6 +125,7 @@ export default function AICopilotModal() {
     };
 
     setMessages((prev) => [...prev, userMsg]);
+    persistMessage(activeSid, userId, userMsg);
     setLoading(true);
 
     try {
@@ -110,15 +143,17 @@ export default function AICopilotModal() {
       };
 
       setMessages((prev) => [...prev, botMsg]);
+      persistMessage(activeSid, userId, botMsg);
     } catch (err: any) {
       const errorMsg: ChatMessage = {
         id: generateId(),
         sender: 'assistant',
-        text: `Encountered an unexpected error: ${err?.message || 'Please try again.'}`,
+        text: `Error: ${err?.message || 'Please try again.'}`,
         engine: 'local',
         timestamp: Date.now(),
       };
       setMessages((prev) => [...prev, errorMsg]);
+      persistMessage(activeSid, userId, errorMsg);
     } finally {
       setLoading(false);
     }
@@ -149,10 +184,12 @@ export default function AICopilotModal() {
       setMessages((prev) =>
         prev.map((m) => {
           if (m.id === messageId && m.action) {
-            return {
+            const updated = {
               ...m,
               action: { ...m.action, executed: true },
             };
+            if (sessionId) persistMessage(sessionId, userId, updated);
+            return updated;
           }
           return m;
         })
@@ -162,10 +199,11 @@ export default function AICopilotModal() {
       const confirmMsg: ChatMessage = {
         id: generateId(),
         sender: 'system',
-        text: `✅ **Action Confirmed & Executed**\n${successDetail}`,
+        text: `✅ **Action Executed**\n${successDetail}`,
         timestamp: Date.now(),
       };
       setMessages((prev) => [...prev, confirmMsg]);
+      if (sessionId) persistMessage(sessionId, userId, confirmMsg);
     } catch (err: any) {
       Alert.alert('Action Execution Failed', err?.message || 'Could not write to SQLite.');
     }
@@ -213,13 +251,23 @@ export default function AICopilotModal() {
           </View>
         </View>
 
-        <TouchableOpacity
-          onPress={() => router.back()}
-          style={[styles.closeBtn, { backgroundColor: colors.surface }]}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Ionicons name="close" size={20} color={colors.text} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <TouchableOpacity
+            onPress={handleNewSession}
+            style={[styles.closeBtn, { backgroundColor: colors.surface }]}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="create-outline" size={19} color={colors.text} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={[styles.closeBtn, { backgroundColor: colors.surface }]}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="close" size={20} color={colors.text} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Messages Stream */}

@@ -73,6 +73,7 @@ const FINANCIAL_PATTERNS = [
   /\b(category|categories|transaction|history|analytics|financial|wealth|fund)\b/i,
   /\b(groceries|food|dining|transport|shopping|salary|wage|bonus|netflix|spotify)\b/i,
   /\b(balance|net|receipt|voucher|discount|interest|inflation|50\/30\/20)\b/i,
+  /\b(change|update|modify|make\s*it|instead|actually|adjust|correct|switch|replace|cancel|due|day|month|monthly|\/mo)\b/i,
 ];
 
 /**
@@ -81,7 +82,7 @@ const FINANCIAL_PATTERNS = [
  * 2. Financial / Moolah system intent -> allowed
  * 3. Unrelated / non-financial -> politely declined
  */
-export function checkPromptGuardrails(prompt: string): GuardrailCheckResult {
+export function checkPromptGuardrails(prompt: string, hasContext = false): GuardrailCheckResult {
   const clean = prompt.trim().toLowerCase();
 
   // 1. Health & Medical Crisis Trigger
@@ -99,9 +100,18 @@ export function checkPromptGuardrails(prompt: string): GuardrailCheckResult {
 
   // 2. Financial & System Control Intent
   const hasFinancialIntent = FINANCIAL_PATTERNS.some((pattern) => pattern.test(clean));
-  const hasNumbers = /\d+/.test(clean); // E.g., "Add 500 lunch"
+  const hasNumbers = /\d+/.test(clean); // E.g., "Add 500 lunch", "change it to 449"
+  const hasActionVerb = /\b(add|create|set|change|make|update|adjust|record|log|delete|remove)\b/i.test(clean);
 
-  if (hasFinancialIntent || (hasNumbers && (clean.includes('add') || clean.includes('create') || clean.includes('set')))) {
+  // If ongoing conversation context exists (e.g. user was just shown an action card), allow conversational tweaks
+  if (hasContext && (hasNumbers || hasActionVerb || clean.length < 35)) {
+    return {
+      allowed: true,
+      type: 'financial',
+    };
+  }
+
+  if (hasFinancialIntent || (hasNumbers && hasActionVerb)) {
     return {
       allowed: true,
       type: 'financial',
@@ -109,7 +119,7 @@ export function checkPromptGuardrails(prompt: string): GuardrailCheckResult {
   }
 
   // 3. Greeting / pleasantry exception
-  const greetings = /^(hi|hello|hey|help|howdy|good\s*(morning|afternoon|evening)|what\s*can\s*you\s*do)\b/i;
+  const greetings = /^(hi|hello|hey|help|howdy|good\s*(morning|afternoon|evening)|what\s*can\s*you\s*do|yes|ok|confirm|no)\b/i;
   if (greetings.test(clean)) {
     return {
       allowed: true,

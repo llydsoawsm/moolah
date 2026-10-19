@@ -115,6 +115,27 @@ export function initializeDatabase(): void {
       FOREIGN KEY (payment_method_id) REFERENCES payment_methods(id)
     );
 
+    CREATE TABLE IF NOT EXISTS chat_sessions (
+      id         TEXT PRIMARY KEY,
+      user_id    TEXT NOT NULL,
+      title      TEXT NOT NULL DEFAULT 'Financial Chat',
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id              TEXT PRIMARY KEY,
+      session_id      TEXT NOT NULL,
+      user_id         TEXT NOT NULL,
+      sender          TEXT NOT NULL,
+      text            TEXT NOT NULL,
+      engine          TEXT,
+      action_json     TEXT,
+      citations_json  TEXT,
+      created_at      INTEGER NOT NULL,
+      FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
+    );
+
     CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(expense_date);
     CREATE INDEX IF NOT EXISTS idx_expenses_category ON expenses(category_id);
     CREATE INDEX IF NOT EXISTS idx_categories_parent ON categories(parent_id);
@@ -122,6 +143,8 @@ export function initializeDatabase(): void {
     CREATE INDEX IF NOT EXISTS idx_resets_email ON password_resets(email);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_budgets_category ON budgets(category_id);
     CREATE INDEX IF NOT EXISTS idx_recurring_due ON recurring_transactions(next_due_date);
+    CREATE INDEX IF NOT EXISTS idx_chat_sessions_user ON chat_sessions(user_id);
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id);
   `);
 
   // Migrate legacy moneyguide.db if moolah.db is empty
@@ -403,12 +426,16 @@ export function importAllDataJSON(jsonStr: string): boolean {
 export function resetDatabase(): void {
   const database = getDatabase();
   database.execSync(`
+    PRAGMA foreign_keys = OFF;
+    DELETE FROM chat_messages;
+    DELETE FROM chat_sessions;
+    DELETE FROM recurring_transactions;
+    DELETE FROM budgets;
     DELETE FROM expenses;
     DELETE FROM categories;
     DELETE FROM payment_methods;
     DELETE FROM user_preferences;
-    DELETE FROM budgets;
-    DELETE FROM recurring_transactions;
+    PRAGMA foreign_keys = ON;
   `);
   seedDefaultData(database);
 }

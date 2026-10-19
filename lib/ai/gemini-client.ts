@@ -99,10 +99,13 @@ export async function sendCopilotMessage(
   query: string,
   apiKey: string,
   chatHistory: ChatMessage[] = [],
-  modelName = 'gemini-3.8',
+  modelName = 'gemini-3.8-flash',
 ): Promise<CopilotResponse> {
+  const hasContext = chatHistory && chatHistory.length > 0;
+  const lastAction = [...chatHistory].reverse().find((m) => m.action && !m.action.executed)?.action;
+
   // 1. First line of defense: Guardrails
-  const guard = checkPromptGuardrails(query);
+  const guard = checkPromptGuardrails(query, hasContext);
   if (!guard.allowed) {
     if (guard.type === 'health_emergency') {
       return {
@@ -133,7 +136,7 @@ export async function sendCopilotMessage(
 
   // 2. If no API key is set, immediately execute offline deterministic engine
   if (!apiKey || apiKey.trim().length === 0) {
-    return processLocalQuery(query);
+    return processLocalQuery(query, lastAction);
   }
 
   // 3. Online Gemini API Request with high-model fallback cascade
@@ -152,18 +155,17 @@ export async function sendCopilotMessage(
       role: 'system',
       parts: [
         {
-          text: `You are Moolah AI Copilot, an autonomous high-tier financial intelligence system and SQLite ledger controller.
-You help users budget, track spending, understand money, and control their app.
+          text: `You are Moolah AI Copilot, a minimalist high-intelligence financial controller in a personal finance app.
 RULES:
-1. STRICT FINANCIAL SCOPE: You ONLY discuss personal finance, budgeting, investments, debt management, and expenses. Politely decline anything outside of finance.
-2. MANDATORY CITATIONS: Whenever giving financial recommendations or advice, you MUST provide explicit citations of recognized personal finance authorities (e.g. [Citation: Elizabeth Warren, 50/30/20 Rule], [Citation: Zero-Based Budgeting, Dave Ramsey], or [Ref: SQLite Ledger]).
-3. CONTROLLER ACTIONS: If the user wants to log transactions, add a category, set a budget, or add a subscription, use the provided function tools. Do not simulate fake confirmations in raw text without calling tools.
-4. Current Ledger Snapshot (${health.month}):
+1. MINIMALIST STYLE: Be extremely concise, direct, and minimalist (1-2 sentences max). Never output long paragraphs, fluffy greetings, or duplicate what is visible in the action card.
+2. STRICT FINANCIAL SCOPE: Discuss ONLY personal finances, expenses, budgets, savings, and investments.
+3. MANDATORY CITATIONS: For financial recommendations, provide recognized citations (e.g. [Citation: Elizabeth Warren, 50/30/20 Rule] or [Ref: SQLite Ledger]).
+4. CONTROLLER ACTIONS: Always call function tools for logging transactions, setting budgets, creating categories, and adding subscriptions. If user wants to tweak or change a previous action (e.g. "change it to 449 on 18"), formulate the updated function call directly.
+5. Current Ledger Snapshot (${health.month}):
 - Total Income: ₱${health.income}
 - Total Expenses: ₱${health.expenses}
-- Net Balance: ₱${health.net}
-- Savings Rate: ${health.savingsRate}%
-- Daily Burn Rate: ₱${health.burnRatePerDay}/day`,
+- Net: ₱${health.net} (Savings Rate: ${health.savingsRate}%)
+- Daily Burn: ₱${health.burnRatePerDay}/day`,
         },
       ],
     };
@@ -272,7 +274,7 @@ function handleGeminiToolCall(name: string, args: any): CopilotResponse {
 
     return {
       engine: 'gemini',
-      text: `I've formulated the following transactions from your request:\n\n${breakdown}\n\nTap **Confirm Action** below to record this into your SQLite database.`,
+      text: `Prepared ${items.length} transaction(s):\n${breakdown}`,
       action: {
         id: generateId(),
         type: 'log_transactions',
@@ -292,7 +294,7 @@ function handleGeminiToolCall(name: string, args: any): CopilotResponse {
   if (name === 'create_category') {
     return {
       engine: 'gemini',
-      text: `I've prepared a new ${args.type || 'expense'} category: **${args.name}**.`,
+      text: `Prepared category: **${args.name}** (${args.type || 'expense'}).`,
       action: {
         id: generateId(),
         type: 'create_category',
@@ -312,7 +314,7 @@ function handleGeminiToolCall(name: string, args: any): CopilotResponse {
   if (name === 'set_budget') {
     return {
       engine: 'gemini',
-      text: `I've prepared a monthly spending budget of **₱${Number(args.amount).toLocaleString()}** for **${args.category_name}**.`,
+      text: `Prepared ${args.category_name} budget cap: ₱${Number(args.amount).toLocaleString()}/month.`,
       action: {
         id: generateId(),
         type: 'set_budget',
@@ -332,7 +334,7 @@ function handleGeminiToolCall(name: string, args: any): CopilotResponse {
   if (name === 'add_subscription') {
     return {
       engine: 'gemini',
-      text: `I've prepared a recurring subscription for **${args.name}** at **₱${Number(args.amount).toLocaleString()}**, due on day ${args.billing_day} of each month.`,
+      text: `Prepared subscription: **${args.name}** — ₱${Number(args.amount).toLocaleString()}/mo (due ${args.billing_day}th).`,
       action: {
         id: generateId(),
         type: 'add_subscription',
