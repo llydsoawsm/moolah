@@ -20,7 +20,11 @@ export function useExpenses(limit?: number, typeFilter: 'all' | 'expense' | 'inc
   const fetchExpenses = useCallback(() => {
     try {
       const db = getDatabase();
-      const whereClause = typeFilter !== 'all' ? `WHERE e.type = '${typeFilter}'` : '';
+      const typeCondition = typeFilter !== 'all' ? `e.type = '${typeFilter}'` : '';
+      const amountCondition = 'e.amount > 0';
+      const whereClause = typeCondition
+        ? `WHERE ${typeCondition} AND ${amountCondition}`
+        : `WHERE ${amountCondition}`;
       const query = `
         SELECT 
           e.*,

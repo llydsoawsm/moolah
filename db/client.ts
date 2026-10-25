@@ -114,7 +114,7 @@ function loadWebStore(): WebStoreData {
       const parsed = JSON.parse(raw) as WebStoreData;
 
       // Check if data truncation / cleanup has run
-      const TRUNCATION_KEY = 'moolah_data_truncated_clean_v5';
+      const TRUNCATION_KEY = 'moolah_data_truncated_clean_v7';
       const hasTruncated = window.localStorage.getItem(TRUNCATION_KEY) === 'true';
 
       if (!hasTruncated) {
@@ -960,7 +960,7 @@ export function initializeDatabase(): void {
 
   // Clean up any previously created mock data & dummy 0-amount expenses
   try {
-    database.execSync("DELETE FROM expenses WHERE amount = 0 OR amount IS NULL;");
+    database.execSync("DELETE FROM expenses WHERE amount <= 0 OR amount IS NULL;");
     database.execSync("DELETE FROM budgets WHERE id LIKE 'b-%';");
     database.execSync("DELETE FROM recurring_transactions WHERE id LIKE 'rec-%';");
   } catch {}
