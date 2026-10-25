@@ -104,8 +104,12 @@ const FINANCIAL_PATTERNS = [
   /\b(tax|taxes|taxation|vat|bir|receipt|receipts|voucher|vouchers|discounts?|inflation|recession|gdp|economy|economic|economics)\b/i,
   // Payment methods
   /\b(gcash|maya|paymaya|paypal|wallet|credit\s*card|debit\s*card|atm|bank\s*account|checking\s*account|savings\s*account)\b/i,
-  // Ledger action verbs when paired with numbers or financial entities
-  /\b(add|log|record|create|set|update|modify|change|adjust|cancel|remove|delete)\b.*\b(\d+|budget|expense|income|category|bill|sub|subscription|money|peso|cash)\b/i,
+  // Financial analysis, reporting, health checks, balance inquiries
+  /\b(analyze|analysis|analytics|overview|summary|report|breakdown|stats|status|health|audit|check|insights?|history|transactions?)\b/i,
+  /\b(how\s*much|what\s*is\s*my|balance|net\s*balance|net\s*worth|total\s*spent|total\s*income|magkano|ipon|gastos|pera|sahod)\b/i,
+  // Ledger action verbs & system commands
+  /\b(clear\s*all|truncate|delete\s*all|remove\s*all|wipe|reset|purge|burahin|tanggalin|i-clear)\b/i,
+  /\b(add|log|record|create|set|update|modify|change|adjust|cancel|remove|delete|clear)\b/i,
 ];
 
 /**

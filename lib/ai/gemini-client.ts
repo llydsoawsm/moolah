@@ -133,6 +133,14 @@ const COPILOT_TOOLS = [
           },
         },
       },
+      {
+        name: 'clear_all_transactions',
+        description: 'Clear all transaction history and purge dummy records from the ledger.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {},
+        },
+      },
     ],
   },
 ];
@@ -417,6 +425,20 @@ function handleGeminiToolCall(name: string, args: any): CopilotResponse {
         title: `Update App Settings`,
         description: `Preferences updated`,
         payload: args,
+      },
+    };
+  }
+
+  if (name === 'clear_all_transactions') {
+    return {
+      engine: 'gemini',
+      text: 'Clearing all transactions and purging ledger data...',
+      action: {
+        id: generateId(),
+        type: 'truncate_expenses',
+        title: 'Clear All Transactions',
+        description: 'Remove all transaction history',
+        payload: {},
       },
     };
   }

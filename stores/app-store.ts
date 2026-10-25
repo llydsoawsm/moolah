@@ -169,6 +169,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       const db = getDatabase();
       db.runSync("INSERT OR REPLACE INTO user_preferences (key, value) VALUES ('gemini_api_key', ?)", key);
     } catch {}
+    UniversalStorage.setItem('moolah_gemini_api_key', key).catch(() => {});
+    if (key) {
+      supabase.auth.updateUser({ data: { gemini_api_key: key } }).catch(() => {});
+    }
   },
   geminiModel: DEFAULT_GEMINI_MODEL,
   setGeminiModel: (model) => {
@@ -250,6 +254,20 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
       }
 
+      let resolvedApiKey = prefs.gemini_api_key?.trim() || '';
+      if (resolvedApiKey.includes('AQ.Ab8RN6') || resolvedApiKey.includes('QVEuQWI4')) {
+        try { db.runSync("DELETE FROM user_preferences WHERE key = 'gemini_api_key'"); } catch {}
+        resolvedApiKey = '';
+      }
+      if (!resolvedApiKey) {
+        try {
+          const storedKey = await UniversalStorage.getItem('moolah_gemini_api_key');
+          if (storedKey && storedKey.trim() && !storedKey.includes('AQ.Ab8RN6')) {
+            resolvedApiKey = storedKey.trim();
+          }
+        } catch {}
+      }
+
       set({
         theme: (prefs.theme as ThemeName) || 'dark',
         currency: prefs.currency || 'PHP',
@@ -257,16 +275,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         biometricEnabled: prefs.biometric_enabled === 'true',
         rememberMe: rememberMe,
         currentUser: currentUser,
-        geminiApiKey: (() => {
-          const raw = prefs.gemini_api_key?.trim() || '';
-          if (raw.includes('AQ.Ab8RN6') || raw.includes('QVEuQWI4')) {
-            try {
-              db.runSync("DELETE FROM user_preferences WHERE key = 'gemini_api_key'");
-            } catch {}
-            return '';
-          }
-          return raw;
-        })(),
+        geminiApiKey: resolvedApiKey,
         geminiModel: prefs.gemini_model?.trim() || DEFAULT_GEMINI_MODEL,
       });
 

@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   TextInput,
   Alert,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -75,6 +76,14 @@ export default function HistoryScreen() {
 
   const handleDelete = useCallback(
     (id: string, name?: string) => {
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        const confirmed = window.confirm(`Are you sure you want to delete this ${name || 'transaction'}?`);
+        if (confirmed) {
+          deleteExpense(id);
+        }
+        return;
+      }
+
       Alert.alert('Delete Record', `Are you sure you want to delete this ${name || 'transaction'}?`, [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -88,6 +97,14 @@ export default function HistoryScreen() {
   );
 
   const handleTruncateAll = useCallback(() => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const confirmed = window.confirm('Are you sure you want to delete all transaction history? This cannot be undone.');
+      if (confirmed) {
+        truncateExpenses();
+      }
+      return;
+    }
+
     Alert.alert(
       'Clear All History',
       'Are you sure you want to delete all transaction history? This cannot be undone.',

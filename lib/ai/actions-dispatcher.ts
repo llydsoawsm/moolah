@@ -4,6 +4,7 @@
 import { getDatabase } from '../../db/client';
 import { useAppStore } from '../../stores/app-store';
 import { generateId, getTodayISO } from '../../lib/utils';
+import { syncDataToSupabase } from '../supabase-sync';
 import type { TransactionType, ThemeName } from '../../lib/types';
 import { startOfMonth, format } from 'date-fns';
 
@@ -347,33 +348,44 @@ export function executeUpdateSettings(params: UpdateSettingsParams) {
  * Unified action execution dispatcher for the AI agent
  */
 export function executeCopilotAction(action: { type: string; payload: any }): string {
+  let message = 'Action completed successfully.';
   if (action.type === 'log_transactions') {
     const items = action.payload.items || [];
     const result = executeLogTransactions(items);
-    return `Recorded ${result.length} transaction(s) in SQLite ledger.`;
+    message = `Recorded ${result.length} transaction(s) in SQLite ledger.`;
   } else if (action.type === 'create_category') {
     const result = executeCreateCategory(action.payload);
-    return `Created category "${result.name}".`;
+    message = `Created category "${result.name}".`;
   } else if (action.type === 'set_budget') {
     const result = executeSetBudget(action.payload);
-    return `Saved ₱${result.amount.toLocaleString()} budget for ${result.category_name}.`;
+    message = `Saved ₱${result.amount.toLocaleString()} budget for ${result.category_name}.`;
   } else if (action.type === 'add_subscription') {
     const result = executeAddSubscription(action.payload);
-    return `Added subscription "${result.name}" (₱${result.amount.toLocaleString()}) on day ${result.billing_day}.`;
+    message = `Added subscription "${result.name}" (₱${result.amount.toLocaleString()}) on day ${result.billing_day}.`;
   } else if (action.type === 'delete_transaction') {
     const result = executeDeleteTransaction(action.payload);
-    return `Deleted transaction (${result.category_name || ''} ₱${result.amount || ''}).`;
+    message = `Deleted transaction (${result.category_name || ''} ₱${result.amount || ''}).`;
   } else if (action.type === 'delete_subscription') {
     const result = executeDeleteSubscription(action.payload);
-    return `Canceled subscription "${result.name}".`;
+    message = `Canceled subscription "${result.name}".`;
   } else if (action.type === 'delete_budget') {
     const result = executeDeleteBudget(action.payload);
-    return `Removed budget for ${result.category_name}.`;
+    message = `Removed budget for ${result.category_name}.`;
+  } else if (action.type === 'truncate_expenses') {
+    const db = getDatabase();
+    db.execSync('DELETE FROM expenses;');
+    useAppStore.getState().triggerRefresh();
+    message = 'Cleared all transactions from ledger.';
   } else if (action.type === 'update_settings') {
     const result = executeUpdateSettings(action.payload);
-    return `Updated app settings (${result.currency ? `Currency: ${result.currency}` : ''} ${result.theme ? `Theme: ${result.theme}` : ''}).`.trim();
+    message = `Updated app settings (${result.currency ? `Currency: ${result.currency}` : ''} ${result.theme ? `Theme: ${result.theme}` : ''}).`.trim();
   }
-  return 'Action completed successfully.';
+
+  try {
+    syncDataToSupabase();
+  } catch {}
+
+  return message;
 }
 
 /**

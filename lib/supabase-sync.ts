@@ -62,8 +62,13 @@ export async function syncDataToSupabase(userId?: string): Promise<boolean> {
     };
 
     // Layer 1: Sync to user_metadata (Instant guaranteed cloud storage)
+    const currentApiKey = useAppStore.getState().geminiApiKey;
+    const metaDataToUpdate: any = { moolah_cloud_data: payload };
+    if (currentApiKey && !currentApiKey.includes('AQ.Ab8RN6')) {
+      metaDataToUpdate.gemini_api_key = currentApiKey;
+    }
     const { error: metaErr } = await supabase.auth.updateUser({
-      data: { moolah_cloud_data: payload },
+      data: metaDataToUpdate,
     });
     if (metaErr) {
       console.warn('[SupabaseSync] Metadata update warning:', metaErr.message);
@@ -139,6 +144,10 @@ export async function restoreDataFromSupabase(userId?: string, cachedCloudData?:
     if (!cloudData) {
       const { data: userData } = await supabase.auth.getUser();
       cloudData = userData?.user?.user_metadata?.moolah_cloud_data;
+      const cloudApiKey = userData?.user?.user_metadata?.gemini_api_key;
+      if (cloudApiKey && typeof cloudApiKey === 'string' && cloudApiKey.trim() && !cloudApiKey.includes('AQ.Ab8RN6')) {
+        useAppStore.getState().setGeminiApiKey(cloudApiKey.trim());
+      }
     }
 
     const db = getDatabase();

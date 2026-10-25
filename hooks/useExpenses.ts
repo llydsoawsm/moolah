@@ -43,7 +43,8 @@ export function useExpenses(limit?: number, typeFilter: 'all' | 'expense' | 'inc
         ${limit ? `LIMIT ${limit}` : ''}
       `;
       const rows = db.getAllSync<ExpenseWithDetails>(query);
-      setExpenses(rows);
+      const validRows = Array.isArray(rows) ? rows.filter((r) => (Number(r.amount) || 0) > 0) : [];
+      setExpenses(validRows);
     } catch (err) {
       console.error('Failed to fetch expenses:', err);
     } finally {

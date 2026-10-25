@@ -63,6 +63,15 @@ export default function SettingsScreen() {
   const [pinStep, setPinStep] = useState<'enter' | 'confirm'>('enter');
 
   const handleSignOut = () => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const confirmed = window.confirm('Are you sure you want to sign out of Moolah?');
+      if (confirmed) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        signOut();
+      }
+      return;
+    }
+
     Alert.alert('Sign Out', 'Are you sure you want to sign out of Moolah?', [
       { text: 'Cancel', style: 'cancel' },
       {

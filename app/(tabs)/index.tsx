@@ -25,6 +25,9 @@ export default function DashboardScreen() {
   const { colors } = useTheme();
   const { summary, categorySpending, loading: analyticsLoading } = useAnalytics();
   const { expenses, loading: expensesLoading } = useExpenses(10);
+  const activeExpenses = React.useMemo(() => {
+    return expenses.filter((e) => (Number(e.amount) || 0) > 0);
+  }, [expenses]);
   const { totals: budgetTotals, budgets } = useBudgets();
   const { upcoming, markAsPaid } = useRecurring();
   const [refreshing, setRefreshing] = useState(false);
@@ -441,7 +444,7 @@ export default function DashboardScreen() {
             </TouchableOpacity>
           </View>
 
-          {expenses.length === 0 ? (
+          {activeExpenses.length === 0 ? (
             <View style={[styles.emptyCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <Ionicons name="receipt-outline" size={32} color={colors.textMuted} />
               <Text style={[styles.emptyTitle, { color: colors.text }]}>No activity yet</Text>
@@ -451,8 +454,8 @@ export default function DashboardScreen() {
             </View>
           ) : (
             <View style={[styles.groupedList, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              {expenses.slice(0, 5).map((expense, idx) => {
-                const isLast = idx === Math.min(expenses.length, 5) - 1;
+              {activeExpenses.slice(0, 5).map((expense, idx) => {
+                const isLast = idx === Math.min(activeExpenses.length, 5) - 1;
                 const isIncome = expense.type === 'income';
                 return (
                   <TouchableOpacity

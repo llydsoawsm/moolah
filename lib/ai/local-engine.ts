@@ -26,6 +26,7 @@ export interface CopilotActionProposal {
     | 'delete_transaction'
     | 'delete_subscription'
     | 'delete_budget'
+    | 'truncate_expenses'
     | 'update_settings';
   title: string;
   description: string;
@@ -170,6 +171,23 @@ export function processLocalQuery(query: string, lastAction?: CopilotActionPropo
   // ------------------------------------------------------------
   // Deletion / Cancellation / Settings Patterns (Full Agent Control)
   // ------------------------------------------------------------
+  if (
+    /\b(clear\s*all|truncate|delete\s*all|remove\s*all|wipe|purge|burahin\s*lahat|tanggalin\s*lahat|i-clear)\b/i.test(lower) ||
+    (/\b(remove|delete)\b/i.test(lower) && lower.includes('general expense'))
+  ) {
+    return {
+      engine: 'local',
+      text: 'Clearing all transactions and purging dummy clutter from your ledger.',
+      action: {
+        id: generateId(),
+        type: 'truncate_expenses',
+        title: 'Clear All Transactions',
+        description: 'Remove all transaction history and reset ledger',
+        payload: {},
+      },
+    };
+  }
+
   if (/\b(delete|remove)\s+(last\s+)?(expense|income|transaction)\b/i.test(lower) || /\b(delete|remove)\s+expense\b/i.test(lower)) {
     const amountMatch = clean.match(/(\d+(?:,\d+)*(?:\.\d+)?)/);
     const amount = amountMatch ? parseFloat(amountMatch[1].replace(/,/g, '')) : undefined;
@@ -393,7 +411,36 @@ export function processLocalQuery(query: string, lastAction?: CopilotActionPropo
   const projectedEnd = Number(health?.projectedMonthEndBalance) || 0;
   const daysLeft = Number(health?.daysRemainingInMonth) || 1;
 
-  // 5a. Biggest / Top Expense Query
+  // 5a. Financial Health & Spending Analysis
+  if (
+    /\b(analyze|analysis|summary|overview|report|audit|breakdown|stats|status|insights?)\b/i.test(lower) ||
+    /\b(magkano|how much did i spend|what did i spend)\b/i.test(lower)
+  ) {
+    let report = `### 📊 Financial Overview (${health?.month || 'This Month'})\n\n`;
+    report += `• **Total Income:** ₱${income.toLocaleString()}\n`;
+    report += `• **Total Expenses:** ₱${expenses.toLocaleString()}\n`;
+    report += `• **Net Balance:** ${net >= 0 ? '+' : ''}₱${net.toLocaleString()} (${savingsRate}% savings rate)\n`;
+    report += `• **Burn Rate:** ₱${burnRate.toLocaleString()}/day (${daysLeft} days remaining)\n\n`;
+    if (health?.topCategories && health.topCategories.length > 0) {
+      report += `**Top Spending Categories:**\n`;
+      health.topCategories.forEach((c) => {
+        report += `• **${c.name}:** ₱${(Number(c.amount) || 0).toLocaleString()} (${c.percentage}%)\n`;
+      });
+      report += `\n`;
+    }
+    if (health?.budgetAdherence && health.budgetAdherence.length > 0) {
+      report += `**Budget Adherence:**\n`;
+      health.budgetAdherence.forEach((b) => {
+        report += `• **${b.category}:** ₱${b.spent.toLocaleString()} / ₱${b.limit.toLocaleString()} (${b.status})\n`;
+      });
+    }
+    return {
+      engine: 'local',
+      text: report.trim(),
+    };
+  }
+
+  // 5b. Biggest / Top Expense Query
   if (/\b(biggest|highest|most|top|largest)\s*(expense|spending|cost|spend)?\b/i.test(lower) || lower.includes('what is my biggest')) {
     if (health?.topCategories && health.topCategories.length > 0) {
       const top = health.topCategories[0];

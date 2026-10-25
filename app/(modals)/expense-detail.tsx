@@ -59,6 +59,16 @@ export default function ExpenseDetailModal() {
 
   const handleDelete = () => {
     if (!expense) return;
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const confirmed = window.confirm('Are you sure you want to delete this expense record?');
+      if (confirmed) {
+        deleteExpense(expense.id);
+        router.back();
+      }
+      return;
+    }
+
     Alert.alert('Delete Expense', 'Are you sure you want to delete this expense record?', [
       { text: 'Cancel', style: 'cancel' },
       {
