@@ -4,6 +4,452 @@
 import * as SQLite from 'expo-sqlite';
 import { DEFAULT_CATEGORIES, DEFAULT_INCOME_CATEGORIES, DEFAULT_PAYMENT_METHODS, DEFAULT_PREFERENCES } from '../lib/constants';
 
+import { Platform } from 'react-native';
+
+const WEB_STORE_KEY = 'moolah_web_storage_db_v1';
+
+interface WebStoreData {
+  categories: any[];
+  payment_methods: any[];
+  expenses: any[];
+  budgets: any[];
+  recurring_transactions: any[];
+  user_preferences: Record<string, string>;
+  chat_sessions: any[];
+  chat_messages: any[];
+  users: any[];
+  password_resets: any[];
+}
+
+function getInitialWebStore(): WebStoreData {
+  const categories: any[] = [];
+  let sortOrder = 0;
+  DEFAULT_CATEGORIES.forEach((cat) => {
+    categories.push({
+      id: cat.id,
+      name: cat.name,
+      icon: cat.icon,
+      color: cat.color,
+      parent_id: null,
+      sort_order: sortOrder++,
+      is_default: 1,
+      type: 'expense',
+      created_at: new Date().toISOString(),
+    });
+    cat.subcategories.forEach((sub, subIdx) => {
+      categories.push({
+        id: sub.id,
+        name: sub.name,
+        icon: sub.icon,
+        color: sub.color,
+        parent_id: cat.id,
+        sort_order: subIdx,
+        is_default: 1,
+        type: 'expense',
+        created_at: new Date().toISOString(),
+      });
+    });
+  });
+
+  DEFAULT_INCOME_CATEGORIES.forEach((cat) => {
+    categories.push({
+      id: cat.id,
+      name: cat.name,
+      icon: cat.icon,
+      color: cat.color,
+      parent_id: null,
+      sort_order: sortOrder++,
+      is_default: 1,
+      type: 'income',
+      created_at: new Date().toISOString(),
+    });
+    cat.subcategories.forEach((sub, subIdx) => {
+      categories.push({
+        id: sub.id,
+        name: sub.name,
+        icon: sub.icon,
+        color: sub.color,
+        parent_id: cat.id,
+        sort_order: subIdx,
+        is_default: 1,
+        type: 'income',
+        created_at: new Date().toISOString(),
+      });
+    });
+  });
+
+  const payment_methods = DEFAULT_PAYMENT_METHODS.map((pm) => ({
+    id: pm.id,
+    name: pm.name,
+    icon: pm.icon,
+    color: pm.color,
+    is_default: pm.is_default ? 1 : 0,
+    created_at: new Date().toISOString(),
+  }));
+
+  return {
+    categories,
+    payment_methods,
+    expenses: [],
+    budgets: [],
+    recurring_transactions: [],
+    user_preferences: { ...DEFAULT_PREFERENCES },
+    chat_sessions: [],
+    chat_messages: [],
+    users: [],
+    password_resets: [],
+  };
+}
+
+function loadWebStore(): WebStoreData {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') {
+    return getInitialWebStore();
+  }
+  try {
+    const raw = window.localStorage.getItem(WEB_STORE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed.categories && parsed.categories.length > 0) {
+        return parsed;
+      }
+    }
+  } catch {}
+  const initial = getInitialWebStore();
+  saveWebStore(initial);
+  return initial;
+}
+
+function saveWebStore(store: WebStoreData) {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(WEB_STORE_KEY, JSON.stringify(store));
+  } catch (e) {
+    console.warn('[Moolah Web Store] Failed to persist state:', e);
+  }
+}
+
+function isSharedArrayBufferAvailable(): boolean {
+  if (Platform.OS !== 'web') return true;
+  try {
+    return (
+      typeof window !== 'undefined' &&
+      typeof (window as any).SharedArrayBuffer !== 'undefined' &&
+      (window as any).SharedArrayBuffer !== (window as any).ArrayBuffer
+    );
+  } catch {
+    return false;
+  }
+}
+
+function createWebFallbackDatabase() {
+  const store = loadWebStore();
+
+  return {
+    execSync: (sql: string) => {
+      // no-op for table creation/indexes
+    },
+    runSync: (sql: string, ...params: any[]) => {
+      const s = sql.trim();
+      const upper = s.toUpperCase();
+
+      if (upper.startsWith('INSERT') && upper.includes('USER_PREFERENCES')) {
+        const key = params[0];
+        const val = String(params[1] ?? '');
+        store.user_preferences[key] = val;
+        saveWebStore(store);
+      } else if (upper.startsWith('DELETE') && upper.includes('USER_PREFERENCES')) {
+        const key = params[0];
+        delete store.user_preferences[key];
+        saveWebStore(store);
+      } else if (upper.startsWith('INSERT') && upper.includes('CHAT_SESSIONS')) {
+        const [id, user_id, title] = params;
+        const now = new Date().toISOString();
+        store.chat_sessions.unshift({ id, user_id, title, created_at: now, updated_at: now });
+        saveWebStore(store);
+      } else if (upper.startsWith('UPDATE') && upper.includes('CHAT_SESSIONS')) {
+        const id = params[params.length - 1];
+        const sess = store.chat_sessions.find((cs) => cs.id === id);
+        if (sess) {
+          sess.updated_at = new Date().toISOString();
+          saveWebStore(store);
+        }
+      } else if (upper.startsWith('DELETE') && upper.includes('CHAT_SESSIONS')) {
+        const id = params[0];
+        store.chat_sessions = store.chat_sessions.filter((cs) => cs.id !== id);
+        store.chat_messages = store.chat_messages.filter((cm) => cm.session_id !== id);
+        saveWebStore(store);
+      } else if (upper.startsWith('INSERT') && upper.includes('CHAT_MESSAGES')) {
+        const [id, session_id, user_id, sender, text, engine, action_json, citations_json, created_at] = params;
+        store.chat_messages.push({
+          id,
+          session_id,
+          user_id,
+          sender,
+          text,
+          engine,
+          action_json,
+          citations_json,
+          created_at: Number(created_at || Date.now()),
+        });
+        const sess = store.chat_sessions.find((cs) => cs.id === session_id);
+        if (sess) {
+          sess.updated_at = new Date().toISOString();
+        }
+        saveWebStore(store);
+      } else if (upper.startsWith('DELETE') && upper.includes('CHAT_MESSAGES')) {
+        const session_id = params[0];
+        store.chat_messages = store.chat_messages.filter((cm) => cm.session_id !== session_id);
+        saveWebStore(store);
+      } else if (upper.startsWith('INSERT') && upper.includes('USERS')) {
+        const [id, name, email, password_hash] = params;
+        const now = new Date().toISOString();
+        store.users = store.users.filter((u) => u.email.toLowerCase() !== String(email).toLowerCase());
+        store.users.push({ id, name, email, password_hash, created_at: now, updated_at: now });
+        saveWebStore(store);
+      } else if (upper.startsWith('UPDATE') && upper.includes('USERS')) {
+        const [password_hash, email] = params;
+        const u = store.users.find((user) => user.email.toLowerCase() === String(email).toLowerCase());
+        if (u) {
+          u.password_hash = password_hash;
+          u.updated_at = new Date().toISOString();
+          saveWebStore(store);
+        }
+      } else if (upper.startsWith('INSERT') && upper.includes('EXPENSES')) {
+        const [id, type, amount, category_id, payment_method_id, note, receipt_image_uri, expense_date] = params;
+        const now = new Date().toISOString();
+        store.expenses.unshift({
+          id,
+          type: type || 'expense',
+          amount: Number(amount),
+          category_id,
+          payment_method_id,
+          note: note || '',
+          receipt_image_uri: receipt_image_uri || null,
+          expense_date: expense_date || now.split('T')[0],
+          created_at: now,
+          updated_at: now,
+        });
+        saveWebStore(store);
+      } else if (upper.startsWith('DELETE') && upper.includes('EXPENSES')) {
+        const id = params[0];
+        store.expenses = store.expenses.filter((e) => e.id !== id);
+        saveWebStore(store);
+      } else if (upper.startsWith('INSERT') && upper.includes('BUDGETS')) {
+        const [id, category_id, amount, period] = params;
+        const now = new Date().toISOString();
+        store.budgets = store.budgets.filter((b) => b.category_id !== category_id);
+        store.budgets.push({ id, category_id, amount: Number(amount), period: period || 'monthly', created_at: now, updated_at: now });
+        saveWebStore(store);
+      } else if (upper.startsWith('UPDATE') && upper.includes('BUDGETS')) {
+        const [amount, id] = params;
+        const b = store.budgets.find((bg) => bg.id === id);
+        if (b) {
+          b.amount = Number(amount);
+          b.updated_at = new Date().toISOString();
+          saveWebStore(store);
+        }
+      } else if (upper.startsWith('DELETE') && upper.includes('BUDGETS')) {
+        const target = params[0];
+        store.budgets = store.budgets.filter((b) => b.id !== target && b.category_id !== target);
+        saveWebStore(store);
+      } else if (upper.startsWith('INSERT') && upper.includes('RECURRING_TRANSACTIONS')) {
+        const [id, type, name, amount, category_id, payment_method_id, frequency, billing_day, next_due_date] = params;
+        store.recurring_transactions.push({
+          id,
+          type: type || 'expense',
+          name,
+          amount: Number(amount),
+          category_id,
+          payment_method_id,
+          frequency: frequency || 'monthly',
+          billing_day: Number(billing_day || 1),
+          next_due_date,
+          is_active: 1,
+          created_at: new Date().toISOString(),
+        });
+        saveWebStore(store);
+      } else if (upper.startsWith('DELETE') && upper.includes('RECURRING_TRANSACTIONS')) {
+        const id = params[0];
+        store.recurring_transactions = store.recurring_transactions.filter((r) => r.id !== id);
+        saveWebStore(store);
+      } else if (upper.startsWith('INSERT') && upper.includes('PASSWORD_RESETS')) {
+        const [id, email, code, expires_at] = params;
+        store.password_resets.push({ id, email, code, expires_at, used: 0, created_at: new Date().toISOString() });
+        saveWebStore(store);
+      } else if (upper.startsWith('UPDATE') && upper.includes('PASSWORD_RESETS')) {
+        const email = params[0];
+        store.password_resets.forEach((pr) => {
+          if (pr.email.toLowerCase() === String(email).toLowerCase()) pr.used = 1;
+        });
+        saveWebStore(store);
+      }
+      return { lastInsertRowId: 1, changes: 1 };
+    },
+    getFirstSync: <T>(sql: string, ...params: any[]): T | null => {
+      const s = sql.trim();
+      const upper = s.toUpperCase();
+
+      if (upper.includes('USERS')) {
+        const val = String(params[0] || '').toLowerCase();
+        const found = store.users.find((u) => u.email.toLowerCase() === val || u.id === val);
+        return (found as unknown as T) || null;
+      }
+      if (upper.includes('CHAT_SESSIONS')) {
+        const userId = params[0];
+        const found = store.chat_sessions.find((cs) => cs.user_id === userId);
+        return (found as unknown as T) || null;
+      }
+      if (upper.includes('CATEGORIES') && upper.includes('COUNT(*)')) {
+        if (upper.includes("TYPE = 'INCOME'")) {
+          const count = store.categories.filter((c) => c.type === 'income').length;
+          return ({ count } as unknown as T);
+        }
+        return ({ count: store.categories.length } as unknown as T);
+      }
+      if (upper.includes('BUDGETS')) {
+        const catId = params[0];
+        const found = store.budgets.find((b) => b.category_id === catId || b.id === catId);
+        return (found as unknown as T) || null;
+      }
+      if (upper.includes('RECURRING_TRANSACTIONS')) {
+        const id = params[0];
+        const found = store.recurring_transactions.find((r) => r.id === id);
+        return (found as unknown as T) || null;
+      }
+      if (upper.includes('EXPENSES') && upper.includes('SUM(AMOUNT)')) {
+        const type = upper.includes("'INCOME'") ? 'income' : 'expense';
+        const total = store.expenses
+          .filter((e) => e.type === type)
+          .reduce((sum, e) => sum + (e.amount || 0), 0);
+        return ({ total } as unknown as T);
+      }
+      if (upper.includes('EXPENSES')) {
+        const id = params[0];
+        const found = store.expenses.find((e) => e.id === id);
+        if (found) {
+          const cat = store.categories.find((c) => c.id === found.category_id);
+          const pm = store.payment_methods.find((p) => p.id === found.payment_method_id);
+          return ({
+            ...found,
+            category_name: cat?.name || 'Uncategorized',
+            category_icon: cat?.icon || 'folder',
+            category_color: cat?.color || '#999',
+            payment_method_name: pm?.name || 'Cash',
+          } as unknown as T);
+        }
+        return null;
+      }
+      if (upper.includes('PASSWORD_RESETS')) {
+        const [email, code] = params;
+        const found = store.password_resets.find(
+          (pr) => pr.email.toLowerCase() === String(email).toLowerCase() && pr.code === String(code) && !pr.used
+        );
+        return (found as unknown as T) || null;
+      }
+      return null;
+    },
+    getAllSync: <T>(sql: string, ...params: any[]): T[] => {
+      const s = sql.trim();
+      const upper = s.toUpperCase();
+
+      if (upper.includes('USER_PREFERENCES')) {
+        return Object.entries(store.user_preferences).map(([key, value]) => ({ key, value })) as unknown as T[];
+      }
+      if (upper.includes('CATEGORIES')) {
+        if (upper.includes("TYPE = 'EXPENSE'")) {
+          return store.categories.filter((c) => c.type === 'expense') as unknown as T[];
+        }
+        if (upper.includes("TYPE = 'INCOME'")) {
+          return store.categories.filter((c) => c.type === 'income') as unknown as T[];
+        }
+        return store.categories as unknown as T[];
+      }
+      if (upper.includes('PAYMENT_METHODS')) {
+        return store.payment_methods as unknown as T[];
+      }
+      if (upper.includes('CHAT_MESSAGES')) {
+        const sessionId = params[0];
+        const list = store.chat_messages.filter((m) => m.session_id === sessionId);
+        return list.map((m) => ({
+          id: m.id,
+          sender: m.sender,
+          text: m.text,
+          engine: m.engine,
+          action_json: m.action_json,
+          citations_json: m.citations_json,
+          timestamp: m.created_at,
+        })) as unknown as T[];
+      }
+      if (upper.includes('CHAT_SESSIONS')) {
+        const userId = params[0];
+        const list = store.chat_sessions.filter((cs) => !userId || cs.user_id === userId);
+        return list.map((cs) => {
+          const msgs = store.chat_messages.filter((cm) => cm.session_id === cs.id);
+          const last = msgs[msgs.length - 1];
+          return {
+            id: cs.id,
+            user_id: cs.user_id,
+            title: cs.title,
+            created_at: cs.created_at,
+            updated_at: cs.updated_at,
+            message_count: msgs.length,
+            last_message: last ? last.text : undefined,
+          };
+        }) as unknown as T[];
+      }
+      if (upper.includes('EXPENSES')) {
+        return store.expenses.map((e) => {
+          const cat = store.categories.find((c) => c.id === e.category_id);
+          const pm = store.payment_methods.find((p) => p.id === e.payment_method_id);
+          return {
+            ...e,
+            category_name: cat?.name || 'Uncategorized',
+            category_icon: cat?.icon || 'folder',
+            category_color: cat?.color || '#999',
+            payment_method_name: pm?.name || 'Cash',
+          };
+        }) as unknown as T[];
+      }
+      if (upper.includes('BUDGETS')) {
+        return store.budgets.map((b) => {
+          const cat = store.categories.find((c) => c.id === b.category_id);
+          return {
+            ...b,
+            category_name: cat?.name || 'Category',
+            category_icon: cat?.icon || 'folder',
+            category_color: cat?.color || '#999',
+          };
+        }) as unknown as T[];
+      }
+      if (upper.includes('RECURRING_TRANSACTIONS')) {
+        return store.recurring_transactions.map((r) => {
+          const cat = store.categories.find((c) => c.id === r.category_id);
+          const pm = store.payment_methods.find((p) => p.id === r.payment_method_id);
+          return {
+            ...r,
+            category_name: cat?.name || 'Category',
+            category_icon: cat?.icon || 'folder',
+            category_color: cat?.color || '#999',
+            payment_method_name: pm?.name || 'Cash',
+          };
+        }) as unknown as T[];
+      }
+      if (upper.includes('PRAGMA TABLE_INFO')) {
+        return [{ name: 'type' }, { name: 'id' }] as unknown as T[];
+      }
+      return [] as T[];
+    },
+    prepareSync: (sql: string) => {
+      const runner = createWebFallbackDatabase();
+      return {
+        executeSync: (...params: any[]) => runner.runSync(sql, ...params),
+        finalizeSync: () => {},
+      };
+    },
+  };
+}
+
+
 const DB_NAME = 'moolah.db';
 const LEGACY_DB_NAME = 'moneyguide.db';
 
@@ -14,9 +460,20 @@ let db: SQLite.SQLiteDatabase | null = null;
  */
 export function getDatabase(): SQLite.SQLiteDatabase {
   if (!db) {
-    db = SQLite.openDatabaseSync(DB_NAME);
-    try { db.execSync('PRAGMA journal_mode = WAL;'); } catch (e) {}
-    try { db.execSync('PRAGMA foreign_keys = ON;'); } catch (e) {}
+    if (Platform.OS === 'web' && !isSharedArrayBufferAvailable()) {
+      console.warn('[Moolah] SharedArrayBuffer is unavailable on web. Using resilient Web Database Fallback.');
+      db = createWebFallbackDatabase() as unknown as SQLite.SQLiteDatabase;
+      return db;
+    }
+
+    try {
+      db = SQLite.openDatabaseSync(DB_NAME);
+      try { db.execSync('PRAGMA journal_mode = WAL;'); } catch (e) {}
+      try { db.execSync('PRAGMA foreign_keys = ON;'); } catch (e) {}
+    } catch (e) {
+      console.warn('[Moolah] SQLite.openDatabaseSync failed on web, using Web Database Fallback:', e);
+      db = createWebFallbackDatabase() as unknown as SQLite.SQLiteDatabase;
+    }
   }
   return db;
 }

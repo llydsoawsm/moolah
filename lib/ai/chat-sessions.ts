@@ -19,26 +19,30 @@ export interface ChatSessionMeta {
  * Get or create an active chat session for a user
  */
 export function getOrCreateActiveSession(userId: string): string {
-  const db = getDatabase();
   const safeUser = userId || 'default_user';
+  try {
+    const db = getDatabase();
+    const existing = db.getFirstSync<{ id: string }>(
+      'SELECT id FROM chat_sessions WHERE user_id = ? ORDER BY updated_at DESC LIMIT 1',
+      safeUser,
+    );
 
-  const existing = db.getFirstSync<{ id: string }>(
-    'SELECT id FROM chat_sessions WHERE user_id = ? ORDER BY updated_at DESC LIMIT 1',
-    safeUser,
-  );
+    if (existing && existing.id) {
+      return existing.id;
+    }
 
-  if (existing) {
-    return existing.id;
+    const newId = `session-${generateId()}`;
+    db.runSync(
+      'INSERT INTO chat_sessions (id, user_id, title) VALUES (?, ?, ?)',
+      newId,
+      safeUser,
+      'Financial Chat',
+    );
+    return newId;
+  } catch (e) {
+    console.warn('Failed getOrCreateActiveSession, fallback:', e);
+    return `session-${Date.now()}`;
   }
-
-  const newId = `session-${generateId()}`;
-  db.runSync(
-    'INSERT INTO chat_sessions (id, user_id, title) VALUES (?, ?, ?)',
-    newId,
-    safeUser,
-    'Financial Chat',
-  );
-  return newId;
 }
 
 /**
@@ -99,21 +103,26 @@ export function deleteSession(sessionId: string): void {
  * Load all messages for a session from SQLite
  */
 export function loadSessionMessages(sessionId: string): ChatMessage[] {
-  const db = getDatabase();
-  const rows = db.getAllSync<any>(
-    'SELECT id, sender, text, engine, action_json, citations_json, created_at FROM chat_messages WHERE session_id = ? ORDER BY created_at ASC',
-    sessionId,
-  );
+  try {
+    const db = getDatabase();
+    const rows = db.getAllSync<any>(
+      'SELECT id, sender, text, engine, action_json, citations_json, created_at FROM chat_messages WHERE session_id = ? ORDER BY created_at ASC',
+      sessionId,
+    );
 
-  return rows.map((r) => ({
-    id: r.id,
-    sender: r.sender,
-    text: r.text,
-    engine: r.engine || undefined,
-    action: r.action_json ? JSON.parse(r.action_json) : undefined,
-    citations: r.citations_json ? JSON.parse(r.citations_json) : undefined,
-    timestamp: r.created_at,
-  }));
+    return (rows || []).map((r) => ({
+      id: r.id,
+      sender: r.sender,
+      text: r.text,
+      engine: r.engine || undefined,
+      action: r.action_json ? (typeof r.action_json === 'string' ? JSON.parse(r.action_json) : r.action_json) : undefined,
+      citations: r.citations_json ? (typeof r.citations_json === 'string' ? JSON.parse(r.citations_json) : r.citations_json) : undefined,
+      timestamp: Number(r.created_at || Date.now()),
+    }));
+  } catch (e) {
+    console.warn('Failed loadSessionMessages:', e);
+    return [];
+  }
 }
 
 /**

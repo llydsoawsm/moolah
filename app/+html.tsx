@@ -32,6 +32,14 @@ export default function Root({ children }: PropsWithChildren) {
         <meta charSet="utf-8" />
         <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
 
+        
+        {/* Polyfill SharedArrayBuffer for Web/Safari to prevent ReferenceErrors */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: "if (typeof window !== 'undefined' && typeof window.SharedArrayBuffer === 'undefined') { window.SharedArrayBuffer = window.ArrayBuffer; }",
+          }}
+        />
+
         {/* 1. Prevent iOS Safari auto-zoom on input focus + cover safe areas */}
         <meta
           name="viewport"

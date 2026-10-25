@@ -61,6 +61,9 @@ export default function AICopilotModal() {
   const currentUser = useAppStore((s) => s.currentUser);
   const userId = currentUser?.id || 'guest';
   const { geminiApiKey, geminiModel } = useAppStore();
+  const setGeminiApiKey = useAppStore((s) => s.setGeminiApiKey);
+  const [apiKeyModalVisible, setApiKeyModalVisible] = useState(false);
+  const [tempApiKey, setTempApiKey] = useState(geminiApiKey || '');
 
   const [sessionId, setSessionId] = useState<string>('');
   const [input, setInput] = useState('');
@@ -288,6 +291,18 @@ export default function AICopilotModal() {
         </View>
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <TouchableOpacity
+            onPress={() => {
+              setTempApiKey(geminiApiKey || '');
+              setApiKeyModalVisible(true);
+            }}
+            style={[styles.closeBtn, { backgroundColor: colors.surface }]}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityLabel="Gemini API Key"
+          >
+            <Ionicons name="key-outline" size={17} color={geminiApiKey ? '#10B981' : colors.text} />
+          </TouchableOpacity>
+
           <TouchableOpacity
             onPress={handleOpenHistory}
             style={[styles.closeBtn, { backgroundColor: colors.surface }]}
@@ -632,6 +647,96 @@ export default function AICopilotModal() {
           </View>
         </View>
       </Modal>
+
+      {/* Gemini API Key Configuration Modal */}
+      <Modal
+        visible={apiKeyModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setApiKeyModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <View style={[styles.historyModalBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={styles.modalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <View style={[styles.historyIconBadge, { backgroundColor: '#10B98120' }]}>
+                  <Ionicons name="key-outline" size={18} color="#10B981" />
+                </View>
+                <Text style={[styles.modalTitle, { color: colors.text }]}>Gemini AI API Key</Text>
+              </View>
+              <TouchableOpacity onPress={() => setApiKeyModalVisible(false)}>
+                <Ionicons name="close" size={20} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={{ fontSize: 13, color: colors.textSecondary, lineHeight: 18 }}>
+              Enter your Google Gemini API key to enable live cloud AI intelligence. You can get a free key from{' '}
+              <Text
+                style={{ color: colors.primary, textDecorationLine: 'underline' }}
+                onPress={() => Linking.openURL('https://aistudio.google.com/')}
+              >
+                aistudio.google.com
+              </Text>.
+            </Text>
+            <Text style={{ fontSize: 12, color: colors.textMuted }}>
+              Leave empty to use the built-in smart local financial engine.
+            </Text>
+
+            <TextInput
+              style={{
+                height: 48,
+                borderRadius: 12,
+                borderWidth: StyleSheet.hairlineWidth,
+                borderColor: colors.border,
+                paddingHorizontal: 14,
+                color: colors.text,
+                fontSize: 15,
+                backgroundColor: colors.surfaceAlt,
+              }}
+              placeholder="Paste AIzaSy... API Key"
+              placeholderTextColor={colors.textMuted}
+              value={tempApiKey}
+              onChangeText={setTempApiKey}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+
+            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 6 }}>
+              <TouchableOpacity
+                style={{
+                  paddingHorizontal: 16,
+                  paddingVertical: 10,
+                  borderRadius: 10,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                }}
+                onPress={() => setApiKeyModalVisible(false)}
+              >
+                <Text style={{ color: colors.text, fontWeight: '500' }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{
+                  paddingHorizontal: 18,
+                  paddingVertical: 10,
+                  borderRadius: 10,
+                  backgroundColor: colors.text,
+                }}
+                onPress={() => {
+                  setGeminiApiKey(tempApiKey.trim());
+                  setApiKeyModalVisible(false);
+                  Alert.alert('Saved', tempApiKey.trim() ? 'Gemini API Key saved!' : 'Switched to local financial engine.');
+                }}
+              >
+                <Text style={{ color: colors.background, fontWeight: '700' }}>Save Key</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
     </KeyboardAvoidingView>
   );
 }
@@ -910,7 +1015,7 @@ const styles = StyleSheet.create({
   },
   textInput: {
     flex: 1,
-    fontSize: 14,
+    fontSize: 16,
     paddingVertical: 8,
   },
   sendBtn: {
