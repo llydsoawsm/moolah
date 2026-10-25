@@ -15,8 +15,8 @@ let db: SQLite.SQLiteDatabase | null = null;
 export function getDatabase(): SQLite.SQLiteDatabase {
   if (!db) {
     db = SQLite.openDatabaseSync(DB_NAME);
-    db.execSync('PRAGMA journal_mode = WAL;');
-    db.execSync('PRAGMA foreign_keys = ON;');
+    try { db.execSync('PRAGMA journal_mode = WAL;'); } catch (e) {}
+    try { db.execSync('PRAGMA foreign_keys = ON;'); } catch (e) {}
   }
   return db;
 }

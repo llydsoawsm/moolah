@@ -26,10 +26,25 @@
     "web": {
       "bundler": "metro",
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/favicon.png",
+      "pwa": {
+        "name": "Moolah",
+        "shortName": "Moolah",
+        "display": "standalone",
+        "backgroundColor": "#0a0a0a",
+        "themeColor": "#0a0a0a"
+      }
     },
     "plugins": [
-      "expo-router",
+      [
+        "expo-router",
+        {
+          "headers": {
+            "Cross-Origin-Opener-Policy": "same-origin",
+            "Cross-Origin-Embedder-Policy": "credentialless"
+          }
+        }
+      ],
       [
         "expo-splash-screen",
         {

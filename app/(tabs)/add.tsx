@@ -621,7 +621,7 @@ export default function AddExpenseScreen() {
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 14,
-    fontSize: 14,
+    fontSize: 16,
   },
   keypad: {
     width: '100%',

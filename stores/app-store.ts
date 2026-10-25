@@ -2,6 +2,7 @@
 // MoneyGuide — Zustand App Store
 // ============================================================
 import { create } from 'zustand';
+import { Platform } from 'react-native';
 import type { ThemeName, AnalyticsPeriod, AnalyticsMode, User } from '../lib/types';
 import { getDatabase } from '../db/client';
 import { DEFAULT_GEMINI_API_KEY, DEFAULT_GEMINI_MODEL } from '../lib/ai/config';
@@ -74,6 +75,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (e) {
       console.error('Error saving login state:', e);
     }
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem('moolah_current_user', JSON.stringify(user));
+        window.localStorage.setItem('moolah_remember_me', String(rememberMe));
+      } catch {}
+    }
   },
 
   signOut: () => {
@@ -83,6 +90,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       db.runSync("DELETE FROM user_preferences WHERE key = 'current_user_id'");
     } catch (e) {
       console.error('Error signing out:', e);
+    }
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      try {
+        window.localStorage.removeItem('moolah_current_user');
+      } catch {}
     }
   },
 
@@ -211,6 +223,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
 
       // If user is authenticated and has a PIN configured, lock the app until PIN/Biometric is verified
+      if (!currentUser && Platform.OS === 'web' && typeof window !== 'undefined') {
+        try {
+          const stored = window.localStorage.getItem('moolah_current_user');
+          const storedRem = window.localStorage.getItem('moolah_remember_me');
+          if (stored && storedRem !== 'false') {
+            currentUser = JSON.parse(stored);
+            set({ currentUser });
+          }
+        } catch {}
+      }
+
       if (prefs.pin_hash && currentUser) {
         set({ isUnlocked: false });
       }
