@@ -40,7 +40,7 @@ export default function RootLayout() {
         setDbReady(true);
 
         // Load user preferences (theme, PIN, user session, etc.)
-        loadPreferences();
+        await loadPreferences();
       } catch (e) {
         console.error('Failed to initialize:', e);
       } finally {

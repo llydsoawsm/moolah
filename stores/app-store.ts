@@ -3,6 +3,7 @@
 // ============================================================
 import { create } from 'zustand';
 import { Platform } from 'react-native';
+import { supabase, UniversalStorage } from '../lib/supabase';
 import type { ThemeName, AnalyticsPeriod, AnalyticsMode, User } from '../lib/types';
 import { getDatabase } from '../db/client';
 import { DEFAULT_GEMINI_API_KEY, DEFAULT_GEMINI_MODEL } from '../lib/ai/config';
@@ -52,7 +53,7 @@ interface AppState {
   setGeminiModel: (model: string) => void;
 
   // Load preferences from database
-  loadPreferences: () => void;
+  loadPreferences: () => Promise<void>;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -75,12 +76,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (e) {
       console.error('Error saving login state:', e);
     }
-    if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      try {
-        window.localStorage.setItem('moolah_current_user', JSON.stringify(user));
-        window.localStorage.setItem('moolah_remember_me', String(rememberMe));
-      } catch {}
-    }
+    try {
+      UniversalStorage.setItem('moolah_current_user', JSON.stringify(user));
+      UniversalStorage.setItem('moolah_remember_me', String(rememberMe));
+    } catch {}
   },
 
   signOut: () => {
@@ -91,11 +90,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (e) {
       console.error('Error signing out:', e);
     }
-    if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      try {
-        window.localStorage.removeItem('moolah_current_user');
-      } catch {}
-    }
+    try {
+      UniversalStorage.removeItem('moolah_current_user');
+    } catch {}
   },
 
   setRememberMe: (remember) => {
@@ -185,8 +182,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   refreshKey: 0,
   triggerRefresh: () => set((s) => ({ refreshKey: s.refreshKey + 1 })),
 
-  // Load preferences from DB
-  loadPreferences: () => {
+  // Load preferences and restore persistent session
+  loadPreferences: async () => {
     try {
       const db = getDatabase();
       const rows = db.getAllSync<{ key: string; value: string }>(
@@ -197,18 +194,47 @@ export const useAppStore = create<AppState>((set, get) => ({
         prefs[r.key] = r.value;
       });
 
-      const rememberMe = prefs.remember_me !== 'false'; // default true
+      const rememberMe = prefs.remember_me !== 'false';
       let currentUser: User | null = null;
 
-      // Only restore user session if remember_me is true
-      if (rememberMe && prefs.current_user_id) {
-        const userRow = db.getFirstSync<User>(
-          'SELECT id, name, email, created_at, updated_at FROM users WHERE id = ?',
-          prefs.current_user_id,
-        );
-        if (userRow) {
-          currentUser = userRow;
+      // 1. Check active Supabase session
+      try {
+        const { data: supaSession } = await supabase.auth.getSession();
+        if (supaSession?.session?.user) {
+          const supaUser = supaSession.session.user;
+          currentUser = {
+            id: supaUser.id,
+            name: supaUser.user_metadata?.name || supaUser.email?.split('@')[0] || 'User',
+            email: supaUser.email || '',
+            created_at: supaUser.created_at,
+          };
         }
+      } catch (e) {
+        console.warn('Supabase getSession notice:', e);
+      }
+
+      // 2. Check UniversalStorage (PWA / Web localStorage persistent across restarts)
+      if (!currentUser && rememberMe) {
+        try {
+          const stored = await UniversalStorage.getItem('moolah_current_user');
+          const storedRem = await UniversalStorage.getItem('moolah_remember_me');
+          if (stored && storedRem !== 'false') {
+            currentUser = JSON.parse(stored);
+          }
+        } catch {}
+      }
+
+      // 3. Fallback to DB query
+      if (!currentUser && rememberMe && prefs.current_user_id) {
+        try {
+          const userRow = db.getFirstSync<User>(
+            'SELECT id, name, email, created_at, updated_at FROM users WHERE id = ?',
+            prefs.current_user_id,
+          );
+          if (userRow) {
+            currentUser = userRow;
+          }
+        } catch {}
       }
 
       set({
@@ -223,17 +249,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
 
       // If user is authenticated and has a PIN configured, lock the app until PIN/Biometric is verified
-      if (!currentUser && Platform.OS === 'web' && typeof window !== 'undefined') {
-        try {
-          const stored = window.localStorage.getItem('moolah_current_user');
-          const storedRem = window.localStorage.getItem('moolah_remember_me');
-          if (stored && storedRem !== 'false') {
-            currentUser = JSON.parse(stored);
-            set({ currentUser });
-          }
-        } catch {}
-      }
-
       if (prefs.pin_hash && currentUser) {
         set({ isUnlocked: false });
       }

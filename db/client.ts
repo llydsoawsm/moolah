@@ -6,7 +6,7 @@ import { DEFAULT_CATEGORIES, DEFAULT_INCOME_CATEGORIES, DEFAULT_PAYMENT_METHODS,
 
 import { Platform } from 'react-native';
 
-const WEB_STORE_KEY = 'moolah_web_storage_db_v1';
+const WEB_STORE_KEY = 'moolah_web_storage_db_v2';
 
 interface WebStoreData {
   categories: any[];
@@ -152,7 +152,25 @@ function createWebFallbackDatabase() {
       const s = sql.trim();
       const upper = s.toUpperCase();
 
-      if (upper.startsWith('INSERT') && upper.includes('USER_PREFERENCES')) {
+      if (upper.startsWith('INSERT') && upper.includes('CATEGORIES')) {
+        const [id, name, icon, color, parent_id, sort_order, is_default, type] = params;
+        store.categories.push({
+          id,
+          name,
+          icon: icon || 'pricetag-outline',
+          color: color || '#71717A',
+          parent_id: parent_id || null,
+          sort_order: Number(sort_order || 99),
+          is_default: Number(is_default ?? 0),
+          type: type || 'expense',
+          created_at: new Date().toISOString(),
+        });
+        saveWebStore(store);
+      } else if (upper.startsWith('DELETE') && upper.includes('CATEGORIES')) {
+        const id = params[0];
+        store.categories = store.categories.filter((c) => c.id !== id);
+        saveWebStore(store);
+      } else if (upper.startsWith('INSERT') && upper.includes('USER_PREFERENCES')) {
         const key = params[0];
         const val = String(params[1] ?? '');
         store.user_preferences[key] = val;
