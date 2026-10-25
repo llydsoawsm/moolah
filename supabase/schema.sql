@@ -156,18 +156,18 @@ ALTER TABLE public.budgets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.recurring_transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_preferences ENABLE ROW LEVEL SECURITY;
 
--- Payment Methods Policies (Readable by all authenticated users)
+-- Payment Methods Policies (Readable by all users)
 DROP POLICY IF EXISTS "Payment methods are viewable by everyone" ON public.payment_methods;
 CREATE POLICY "Payment methods are viewable by everyone"
   ON public.payment_methods FOR SELECT
-  TO authenticated
+  TO anon, authenticated
   USING (true);
 
 -- Categories Policies (Users see default categories and their own custom categories)
 DROP POLICY IF EXISTS "Users can view default and their own categories" ON public.categories;
 CREATE POLICY "Users can view default and their own categories"
   ON public.categories FOR SELECT
-  TO authenticated
+  TO anon, authenticated
   USING (auth.uid() = user_id OR user_id IS NULL);
 
 DROP POLICY IF EXISTS "Users can manage their own categories" ON public.categories;
