@@ -158,6 +158,8 @@ export async function restoreDataFromSupabase(userId?: string, cachedCloudData?:
       db.execSync('DELETE FROM expenses;');
       for (const e of expensesToRestore) {
         if (!e.amount || Number(e.amount) <= 0) continue;
+        if (e.id && String(e.id).startsWith('mock-')) continue;
+        if ((!e.category_id || e.category_id === 'cat-other') && (!e.note || String(e.note).trim() === '')) continue;
         try {
           db.runSync(
             `INSERT OR REPLACE INTO expenses (id, type, amount, category_id, payment_method_id, note, receipt_image_uri, expense_date, created_at, updated_at) 

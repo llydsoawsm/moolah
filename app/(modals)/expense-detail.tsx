@@ -213,6 +213,18 @@ export default function ExpenseDetailModal() {
           </Animated.View>
         )}
 
+        {/* Prominent Action Button */}
+        <Animated.View entering={FadeInDown.duration(400).delay(200)} style={{ marginTop: 24 }}>
+          <TouchableOpacity
+            style={[styles.deleteActionButton, { borderColor: colors.danger + '40', backgroundColor: colors.danger + '12' }]}
+            onPress={handleDelete}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="trash-outline" size={16} color={colors.danger} />
+            <Text style={[styles.deleteActionButtonText, { color: colors.danger }]}>Delete Transaction</Text>
+          </TouchableOpacity>
+        </Animated.View>
+
         <View style={styles.bottomSpacer} />
       </ScrollView>
     </View>
@@ -365,5 +377,18 @@ const styles = StyleSheet.create({
   },
   bottomSpacer: {
     height: 30,
+  },
+  deleteActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 48,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 8,
+  },
+  deleteActionButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

@@ -285,9 +285,9 @@ export default function AICopilotModal() {
           <View>
             <Text style={[styles.headerTitle, { color: colors.text }]}>Financial Copilot</Text>
             <View style={styles.engineBadge}>
-              <View style={[styles.engineDot, { backgroundColor: '#10B981' }]} />
+              <View style={[styles.engineDot, { backgroundColor: geminiApiKey ? '#10B981' : '#3B82F6' }]} />
               <Text style={[styles.engineText, { color: colors.textSecondary }]}>
-                Gemini 3.8
+                {geminiApiKey ? 'Gemini AI' : 'Smart Local Engine'}
               </Text>
             </View>
           </View>
@@ -517,8 +517,12 @@ export default function AICopilotModal() {
             styles.sendBtn,
             { backgroundColor: input.trim() ? colors.primary : colors.surfaceAlt },
           ]}
-          disabled={!input.trim() || loading}
-          onPress={() => handleSend()}
+          disabled={loading}
+          onPress={() => {
+            if (!input.trim()) return;
+            handleSend();
+          }}
+          activeOpacity={0.7}
         >
           <Ionicons
             name="arrow-up"

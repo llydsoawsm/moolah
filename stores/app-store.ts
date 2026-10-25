@@ -257,7 +257,16 @@ export const useAppStore = create<AppState>((set, get) => ({
         biometricEnabled: prefs.biometric_enabled === 'true',
         rememberMe: rememberMe,
         currentUser: currentUser,
-        geminiApiKey: prefs.gemini_api_key?.trim() || DEFAULT_GEMINI_API_KEY,
+        geminiApiKey: (() => {
+          const raw = prefs.gemini_api_key?.trim() || '';
+          if (raw.includes('AQ.Ab8RN6') || raw.includes('QVEuQWI4')) {
+            try {
+              db.runSync("DELETE FROM user_preferences WHERE key = 'gemini_api_key'");
+            } catch {}
+            return '';
+          }
+          return raw;
+        })(),
         geminiModel: prefs.gemini_model?.trim() || DEFAULT_GEMINI_MODEL,
       });
 

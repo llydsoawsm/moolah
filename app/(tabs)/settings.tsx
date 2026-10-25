@@ -13,6 +13,7 @@ import {
   TextInput,
   Modal,
   Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -24,6 +25,7 @@ import { useTheme } from '../../hooks/useTheme';
 import { useAppStore } from '../../stores/app-store';
 import { themes, themeOptions } from '../../lib/theme';
 import { resetDatabase, exportExpensesToCSV, exportAllDataJSON } from '../../db/client';
+import { syncDataToSupabase } from '../../lib/supabase-sync';
 import { SUPPORTED_CURRENCIES } from '../../lib/constants';
 import type { ThemeName } from '../../lib/types';
 import Animated, { FadeInDown } from 'react-native-reanimated';
@@ -49,7 +51,10 @@ export default function SettingsScreen() {
   const biometricEnabled = useAppStore((s) => s.biometricEnabled);
   const setBiometricEnabled = useAppStore((s) => s.setBiometricEnabled);
 
-
+  // Clear All Data Confirmation Modal State
+  const [showClearConfirmModal, setShowClearConfirmModal] = useState(false);
+  const [confirmInput, setConfirmInput] = useState('');
+  const isConfirmValid = confirmInput.trim().toLowerCase() === 'confirm';
 
   // PIN Form
   const [showPinSetup, setShowPinSetup] = useState(false);
@@ -127,22 +132,28 @@ export default function SettingsScreen() {
   };
 
   const handleClearData = () => {
-    Alert.alert(
-      'Clear All Data',
-      'This will permanently erase all your expenses. This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Erase Everything',
-          style: 'destructive',
-          onPress: () => {
-            resetDatabase();
-            useAppStore.getState().triggerRefresh();
-            Alert.alert('Reset Complete', 'All data has been cleared.');
-          },
-        },
-      ],
-    );
+    setConfirmInput('');
+    setShowClearConfirmModal(true);
+  };
+
+  const handleExecuteClearData = async () => {
+    if (!isConfirmValid) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      Alert.alert('Confirmation Required', 'Please type "confirm" to verify you want to erase all data.');
+      return;
+    }
+    try {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      resetDatabase();
+      await syncDataToSupabase();
+      useAppStore.getState().triggerRefresh();
+      setShowClearConfirmModal(false);
+      setConfirmInput('');
+      Alert.alert('Reset Complete', 'All transactions, budgets, subscriptions, and custom categories have been cleared.');
+    } catch (err) {
+      console.error('Reset data error:', err);
+      Alert.alert('Error', 'Failed to clear data completely.');
+    }
   };
 
   const handleExportCSV = async () => {
@@ -738,6 +749,86 @@ export default function SettingsScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Clear All Data Type "confirm" Modal */}
+      <Modal
+        visible={showClearConfirmModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowClearConfirmModal(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <View style={[styles.modalBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={styles.modalHeaderRow}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <View style={[styles.dangerIconCircle, { backgroundColor: colors.danger + '18' }]}>
+                  <Ionicons name="warning-outline" size={20} color={colors.danger} />
+                </View>
+                <Text style={[styles.modalTitle, { color: colors.text }]}>Erase All Data</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowClearConfirmModal(false)}>
+                <Ionicons name="close" size={20} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={{ fontSize: 13, color: colors.textSecondary, lineHeight: 18, marginTop: 4 }}>
+              This will permanently delete all expenses, budgets, subscriptions, and reset custom categories.
+            </Text>
+
+            <View style={{ marginTop: 14, marginBottom: 8 }}>
+              <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textMuted, marginBottom: 8, letterSpacing: 0.6 }}>
+                TYPE <Text style={{ color: colors.danger }}>confirm</Text> TO PROCEED:
+              </Text>
+              <TextInput
+                style={[
+                  styles.confirmTextInput,
+                  {
+                    backgroundColor: colors.surfaceAlt,
+                    borderColor: isConfirmValid ? colors.danger : colors.border,
+                    color: colors.text,
+                  },
+                ]}
+                placeholder='Type "confirm"'
+                placeholderTextColor={colors.textMuted}
+                value={confirmInput}
+                onChangeText={setConfirmInput}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
+
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+              <TouchableOpacity
+                style={[styles.modalCancelBtn, { borderColor: colors.border }]}
+                onPress={() => setShowClearConfirmModal(false)}
+                activeOpacity={0.7}
+              >
+                <Text style={{ color: colors.text, fontWeight: '600', fontSize: 13 }}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.modalDangerBtn,
+                  {
+                    backgroundColor: isConfirmValid ? colors.danger : colors.surfaceAlt,
+                    opacity: isConfirmValid ? 1 : 0.6,
+                  },
+                ]}
+                onPress={handleExecuteClearData}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="trash-outline" size={15} color={isConfirmValid ? '#FFFFFF' : colors.textMuted} />
+                <Text style={{ color: isConfirmValid ? '#FFFFFF' : colors.textMuted, fontWeight: '700', fontSize: 13 }}>
+                  Delete Everything
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -1094,5 +1185,37 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 18,
     paddingVertical: 10,
+  },
+  dangerIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  confirmTextInput: {
+    height: 46,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    paddingHorizontal: 14,
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  modalCancelBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalDangerBtn: {
+    flex: 1.3,
+    height: 44,
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
   },
 });

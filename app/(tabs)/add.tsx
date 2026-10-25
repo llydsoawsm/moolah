@@ -110,20 +110,30 @@ export default function AddExpenseScreen() {
     ]);
   };
 
+  // Auto-select first category for instant convenience
+  React.useEffect(() => {
+    if (!selectedCategory && categories.length > 0) {
+      setSelectedCategory(categories[0].id);
+    }
+  }, [categories]);
+
   const handleSave = async () => {
     const numAmount = parseFloat(amount);
     if (!numAmount || numAmount <= 0) {
-      Alert.alert('Amount required', 'Please enter an amount.');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      Alert.alert('Amount Required', 'Please enter an amount greater than 0.');
       return;
     }
-    if (!selectedCategory) {
-      Alert.alert('Category required', 'Please select a category.');
+    const catId = selectedSubcategory || selectedCategory || (categories.length > 0 ? categories[0].id : null);
+    if (!catId) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      Alert.alert('Category Required', 'Please select a category above.');
       return;
     }
 
     setSaving(true);
     try {
-      const categoryId = selectedSubcategory || selectedCategory;
+      const categoryId = catId;
       addExpense({
         type: txType,
         amount: amount,
@@ -470,24 +480,24 @@ export default function AddExpenseScreen() {
           style={[
             styles.saveButton,
             {
-              backgroundColor: canSave ? colors.primary : colors.surface,
-              borderColor: colors.border,
-              borderWidth: StyleSheet.hairlineWidth,
+              backgroundColor: canSave ? colors.primary : colors.surfaceAlt,
+              borderColor: canSave ? colors.primary : colors.border,
+              borderWidth: 1,
             },
           ]}
           onPress={handleSave}
-          disabled={!canSave || saving}
-          activeOpacity={0.8}
+          disabled={saving}
+          activeOpacity={0.7}
         >
-            <Text
-              style={[
-                styles.saveButtonText,
-                { color: canSave ? (colors.statusBar === 'light' ? '#09090B' : '#FFFFFF') : colors.textMuted },
-              ]}
-            >
-              {saving ? 'Saving...' : txType === 'income' ? 'Save Income' : 'Save Expense'}
-            </Text>
-          </TouchableOpacity>
+          <Text
+            style={[
+              styles.saveButtonText,
+              { color: canSave ? (colors.statusBar === 'light' ? '#09090B' : '#FFFFFF') : colors.textSecondary },
+            ]}
+          >
+            {saving ? 'Saving...' : txType === 'income' ? 'Save Income' : 'Save Expense'}
+          </Text>
+        </TouchableOpacity>
 
           <View style={styles.bottomSpacer} />
         </ScrollView>

@@ -114,7 +114,7 @@ function loadWebStore(): WebStoreData {
       const parsed = JSON.parse(raw) as WebStoreData;
 
       // Check if data truncation / cleanup has run
-      const TRUNCATION_KEY = 'moolah_data_truncated_clean_v3';
+      const TRUNCATION_KEY = 'moolah_data_truncated_clean_v5';
       const hasTruncated = window.localStorage.getItem(TRUNCATION_KEY) === 'true';
 
       if (!hasTruncated) {
@@ -149,12 +149,16 @@ function loadWebStore(): WebStoreData {
         parsed.payment_methods = initial.payment_methods;
       }
 
-      // 3. Heal expenses: remove 0/negative/corrupt dummy records & sanitize valid entries
+      // 3. Heal expenses: remove 0/negative/corrupt dummy records & purge General Expense clutter
       if (Array.isArray(parsed.expenses)) {
         parsed.expenses = parsed.expenses
           .filter((e) => {
             const num = typeof e.amount === 'number' ? e.amount : parseFloat(String(e.amount || 0));
-            return !isNaN(num) && num > 0;
+            if (isNaN(num) || num <= 0) return false;
+            // Purge dummy mock items and unattached general expense records
+            if (e.id && String(e.id).startsWith('mock-')) return false;
+            if ((!e.category_id || e.category_id === 'cat-other') && (!e.note || e.note.trim() === '')) return false;
+            return true;
           })
           .map((e) => {
             const rawAmt = typeof e.amount === 'number' && !isNaN(e.amount)
@@ -385,7 +389,11 @@ function createWebFallbackDatabase() {
         }
       } else if (upper.startsWith('DELETE') && upper.includes('EXPENSES')) {
         const id = params[0];
-        store.expenses = store.expenses.filter((e) => e.id !== id);
+        if (id && (upper.includes('WHERE ID =') || upper.includes('WHERE ID='))) {
+          store.expenses = store.expenses.filter((e) => e.id !== id);
+        } else {
+          store.expenses = [];
+        }
         saveWebStore(store);
       } else if (upper.startsWith('INSERT') && upper.includes('BUDGETS')) {
         const [id, category_id, amount, period] = params;

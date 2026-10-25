@@ -105,21 +105,29 @@ export default function DashboardScreen() {
 
             {/* Income & Expense Side-by-Side Pill Badges */}
             <View style={styles.flowPillsRow}>
-              <View style={[styles.flowPill, { backgroundColor: colors.surfaceAlt }]}>
+              <TouchableOpacity
+                style={[styles.flowPill, { backgroundColor: colors.surfaceAlt }]}
+                onPress={() => router.push('/(tabs)/history')}
+                activeOpacity={0.7}
+              >
                 <Ionicons name="arrow-down-circle" size={14} color={colors.success} />
                 <Text style={[styles.flowPillLabel, { color: colors.textMuted }]}>Income</Text>
                 <Text style={[styles.flowPillValue, { color: colors.success }]}>
                   +{formatCurrency(summary.incomeThisMonth)}
                 </Text>
-              </View>
+              </TouchableOpacity>
 
-              <View style={[styles.flowPill, { backgroundColor: colors.surfaceAlt }]}>
+              <TouchableOpacity
+                style={[styles.flowPill, { backgroundColor: colors.surfaceAlt }]}
+                onPress={() => router.push('/(tabs)/history')}
+                activeOpacity={0.7}
+              >
                 <Ionicons name="arrow-up-circle" size={14} color={colors.danger} />
                 <Text style={[styles.flowPillLabel, { color: colors.textMuted }]}>Expenses</Text>
                 <Text style={[styles.flowPillValue, { color: colors.danger }]}>
                   -{formatCurrency(summary.expenseThisMonth)}
                 </Text>
-              </View>
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -128,7 +136,11 @@ export default function DashboardScreen() {
 
           {/* Subdued Stat Row */}
           <View style={styles.statRow}>
-            <View style={styles.statColumn}>
+            <TouchableOpacity
+              style={styles.statColumn}
+              onPress={() => router.push('/(tabs)/analytics')}
+              activeOpacity={0.7}
+            >
               <Text style={[styles.subStatLabel, { color: colors.textMuted }]}>NET TODAY</Text>
               <Text
                 style={[
@@ -138,11 +150,15 @@ export default function DashboardScreen() {
               >
                 {summary.netToday >= 0 ? '+' : ''}{formatCurrency(summary.netToday)}
               </Text>
-            </View>
+            </TouchableOpacity>
 
             <View style={[styles.verticalDivider, { backgroundColor: colors.border }]} />
 
-            <View style={styles.statColumn}>
+            <TouchableOpacity
+              style={styles.statColumn}
+              onPress={() => router.push('/(tabs)/analytics')}
+              activeOpacity={0.7}
+            >
               <Text style={[styles.subStatLabel, { color: colors.textMuted }]}>NET THIS WEEK</Text>
               <Text
                 style={[
@@ -152,8 +168,55 @@ export default function DashboardScreen() {
               >
                 {summary.netThisWeek >= 0 ? '+' : ''}{formatCurrency(summary.netThisWeek)}
               </Text>
-            </View>
+            </TouchableOpacity>
           </View>
+        </Animated.View>
+
+        {/* Quick Actions Strip */}
+        <Animated.View entering={FadeInDown.duration(400).delay(100)} style={styles.quickActionsRow}>
+          <TouchableOpacity
+            style={[styles.quickActionCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            onPress={() => router.push('/(tabs)/add')}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.quickActionIcon, { backgroundColor: colors.primary + '18' }]}>
+              <Ionicons name="add" size={18} color={colors.primary} />
+            </View>
+            <Text style={[styles.quickActionLabel, { color: colors.text }]}>Add Entry</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.quickActionCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            onPress={() => router.push('/(modals)/ai-copilot')}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.quickActionIcon, { backgroundColor: '#8B5CF618' }]}>
+              <Ionicons name="sparkles" size={16} color="#8B5CF6" />
+            </View>
+            <Text style={[styles.quickActionLabel, { color: colors.text }]}>Copilot</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.quickActionCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            onPress={() => router.push('/(modals)/budget-manager')}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.quickActionIcon, { backgroundColor: '#10B98118' }]}>
+              <Ionicons name="pie-chart-outline" size={16} color="#10B981" />
+            </View>
+            <Text style={[styles.quickActionLabel, { color: colors.text }]}>Budgets</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.quickActionCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            onPress={() => router.push('/(tabs)/analytics')}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.quickActionIcon, { backgroundColor: '#3B82F618' }]}>
+              <Ionicons name="bar-chart-outline" size={16} color="#3B82F6" />
+            </View>
+            <Text style={[styles.quickActionLabel, { color: colors.text }]}>Insights</Text>
+          </TouchableOpacity>
         </Animated.View>
 
         {/* Monthly Budget Tracker Card */}
@@ -553,6 +616,32 @@ const styles = StyleSheet.create({
   },
   statColumn: {
     flex: 1,
+  },
+  quickActionsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 20,
+  },
+  quickActionCard: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 6,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quickActionIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
+  },
+  quickActionLabel: {
+    fontSize: 11,
+    fontWeight: '600',
   },
   subStatLabel: {
     fontSize: 10,
