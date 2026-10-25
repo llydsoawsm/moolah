@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { getDatabase } from '../db/client';
 import { useAppStore } from '../stores/app-store';
 import { generateId, getTodayISO } from '../lib/utils';
+import { syncDataToSupabase } from '../lib/supabase-sync';
 import type { ExpenseWithDetails, ExpenseFormData } from '../lib/types';
 
 /**
@@ -75,6 +76,7 @@ export function useExpenses(limit?: number, typeFilter: 'all' | 'expense' | 'inc
         );
 
         triggerRefresh();
+        syncDataToSupabase();
         return id;
       } catch (err) {
         console.error('Failed to add transaction:', err);
@@ -129,6 +131,7 @@ export function useExpenses(limit?: number, typeFilter: 'all' | 'expense' | 'inc
           values.push(id);
           db.runSync(`UPDATE expenses SET ${sets.join(', ')} WHERE id = ?`, ...values);
           triggerRefresh();
+          syncDataToSupabase();
         }
       } catch (err) {
         console.error('Failed to update transaction:', err);
@@ -143,6 +146,7 @@ export function useExpenses(limit?: number, typeFilter: 'all' | 'expense' | 'inc
         const db = getDatabase();
         db.runSync('DELETE FROM expenses WHERE id = ?', id);
         triggerRefresh();
+        syncDataToSupabase();
       } catch (err) {
         console.error('Failed to delete transaction:', err);
       }
@@ -150,5 +154,16 @@ export function useExpenses(limit?: number, typeFilter: 'all' | 'expense' | 'inc
     [triggerRefresh],
   );
 
-  return { expenses, loading, addExpense, updateExpense, deleteExpense, refetch: fetchExpenses };
+  const truncateExpenses = useCallback(() => {
+    try {
+      const db = getDatabase();
+      db.execSync('DELETE FROM expenses;');
+      triggerRefresh();
+      syncDataToSupabase();
+    } catch (err) {
+      console.error('Failed to truncate transactions:', err);
+    }
+  }, [triggerRefresh]);
+
+  return { expenses, loading, addExpense, updateExpense, deleteExpense, truncateExpenses, refetch: fetchExpenses };
 }

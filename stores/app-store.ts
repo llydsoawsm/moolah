@@ -7,6 +7,7 @@ import { supabase, UniversalStorage } from '../lib/supabase';
 import type { ThemeName, AnalyticsPeriod, AnalyticsMode, User } from '../lib/types';
 import { getDatabase } from '../db/client';
 import { DEFAULT_GEMINI_API_KEY, DEFAULT_GEMINI_MODEL } from '../lib/ai/config';
+import { restoreDataFromSupabase } from '../lib/supabase-sync';
 
 interface AppState {
   // User Authentication
@@ -259,6 +260,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         geminiApiKey: prefs.gemini_api_key?.trim() || DEFAULT_GEMINI_API_KEY,
         geminiModel: prefs.gemini_model?.trim() || DEFAULT_GEMINI_MODEL,
       });
+
+      // Restore user data from Supabase cloud if logged in
+      if (currentUser) {
+        restoreDataFromSupabase(currentUser.id).catch((err) =>
+          console.warn('Initial cloud restore notice:', err),
+        );
+      }
 
       // If user is authenticated and has a PIN configured, lock the app until PIN/Biometric is verified
       if (prefs.pin_hash && currentUser) {

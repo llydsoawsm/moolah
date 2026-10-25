@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { getDatabase } from '../db/client';
 import { useAppStore } from '../stores/app-store';
 import { generateId, getTodayISO } from '../lib/utils';
+import { syncDataToSupabase } from '../lib/supabase-sync';
 import type { RecurringTransaction } from '../lib/types';
 import { parseISO, differenceInCalendarDays, addMonths, format } from 'date-fns';
 
@@ -120,6 +121,7 @@ export function useRecurring() {
         );
 
         triggerRefresh();
+        syncDataToSupabase();
         return true;
       } catch (err) {
         console.error('Failed to mark subscription as paid:', err);
@@ -160,6 +162,7 @@ export function useRecurring() {
           nextDueDate,
         );
         triggerRefresh();
+        syncDataToSupabase();
         return true;
       } catch (err) {
         console.error('Failed to add recurring subscription:', err);
@@ -175,6 +178,7 @@ export function useRecurring() {
         const db = getDatabase();
         db.runSync('DELETE FROM recurring_transactions WHERE id = ?', id);
         triggerRefresh();
+        syncDataToSupabase();
         return true;
       } catch (err) {
         console.error('Failed to delete subscription:', err);

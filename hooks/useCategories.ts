@@ -3,6 +3,7 @@
 // ============================================================
 import { useState, useEffect, useCallback } from 'react';
 import { getDatabase } from '../db/client';
+import { syncDataToSupabase } from '../lib/supabase-sync';
 import type { Category, CategoryWithSubs, TransactionType } from '../lib/types';
 
 /**
@@ -69,6 +70,7 @@ export function useCategories(typeFilter: 'expense' | 'income' | 'all' = 'all') 
           type,
         );
         fetchCategories();
+        syncDataToSupabase();
         return id;
       } catch (err) {
         console.error('Failed to add category:', err);
@@ -83,6 +85,7 @@ export function useCategories(typeFilter: 'expense' | 'income' | 'all' = 'all') 
         const db = getDatabase();
         db.runSync('DELETE FROM categories WHERE id = ? AND is_default = 0', id);
         fetchCategories();
+        syncDataToSupabase();
       } catch (err) {
         console.error('Failed to delete category:', err);
       }

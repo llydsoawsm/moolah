@@ -114,11 +114,11 @@ function loadWebStore(): WebStoreData {
       const parsed = JSON.parse(raw) as WebStoreData;
 
       // Check if data truncation / cleanup has run
-      const TRUNCATION_KEY = 'moolah_data_truncated_clean_v1';
+      const TRUNCATION_KEY = 'moolah_data_truncated_clean_v3';
       const hasTruncated = window.localStorage.getItem(TRUNCATION_KEY) === 'true';
 
       if (!hasTruncated) {
-        // User requested: truncate all transaction data and restore default categories
+        // User requested: truncate all transaction history and restore default categories
         parsed.expenses = [];
         parsed.budgets = [];
         parsed.recurring_transactions = [];

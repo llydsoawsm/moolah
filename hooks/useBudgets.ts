@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { getDatabase } from '../db/client';
 import { useAppStore } from '../stores/app-store';
 import { generateId } from '../lib/utils';
+import { syncDataToSupabase } from '../lib/supabase-sync';
 import type { BudgetWithSpending } from '../lib/types';
 
 export function useBudgets() {
@@ -101,6 +102,7 @@ export function useBudgets() {
           );
         }
         triggerRefresh();
+        syncDataToSupabase();
         return true;
       } catch (err) {
         console.error('Failed to save budget:', err);
@@ -116,6 +118,7 @@ export function useBudgets() {
         const db = getDatabase();
         db.runSync('DELETE FROM budgets WHERE id = ?', id);
         triggerRefresh();
+        syncDataToSupabase();
         return true;
       } catch (err) {
         console.error('Failed to delete budget:', err);

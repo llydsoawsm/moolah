@@ -6,6 +6,7 @@ import * as Crypto from 'expo-crypto';
 import { getDatabase } from '../db/client';
 import { useAppStore } from '../stores/app-store';
 import { supabase } from '../lib/supabase';
+import { syncDataToSupabase, restoreDataFromSupabase } from '../lib/supabase-sync';
 import type { User, PasswordResetRecord } from '../lib/types';
 
 const SALT = '_moolah_security_salt_';
@@ -38,7 +39,7 @@ export function useAuth() {
     }
   }, []);
 
-  /** Sign In with App Auth (with Supabase cloud restore) */
+  /** Sign In directly with Supabase database (with offline cache fallback) */
   const signIn = useCallback(
     async (emailInput: string, passwordInput: string, remember: boolean) => {
       setLoading(true);
@@ -53,76 +54,78 @@ export function useAuth() {
         const hashedPassword = await hashPassword(passwordInput);
         const db = getDatabase();
 
-        // 1. Check local App Database FIRST (App Auth)
+        // 1. Primary: Authenticate directly with Supabase Database
         try {
+          const { data: supaData, error: supaErr } = await supabase.auth.signInWithPassword({
+            email,
+            password: passwordInput,
+          });
+
+          if (supaErr) {
+            // If invalid login credentials, throw user-friendly error
+            if (
+              supaErr.message?.toLowerCase().includes('invalid login credentials') ||
+              supaErr.message?.toLowerCase().includes('email not confirmed')
+            ) {
+              throw new Error('Invalid email or password. Please check your credentials.');
+            }
+            throw new Error(supaErr.message);
+          }
+
+          if (supaData?.user) {
+            const supaUser = supaData.user;
+            const fallbackName = typeof email === 'string' && email.includes('@') ? email.split('@')[0] : 'User';
+            authenticatedUser = {
+              id: supaUser.id,
+              name: supaUser.user_metadata?.name || fallbackName,
+              email: supaUser.email || email,
+              created_at: supaUser.created_at,
+            };
+
+            // Cache in local SQLite database for offline access
+            try {
+              db.runSync(
+                'INSERT OR REPLACE INTO users (id, name, email, password_hash) VALUES (?, ?, ?, ?)',
+                authenticatedUser.id,
+                authenticatedUser.name,
+                authenticatedUser.email,
+                hashedPassword,
+              );
+            } catch {}
+
+            // Restore cloud data from Supabase
+            await restoreDataFromSupabase(authenticatedUser.id, supaUser.user_metadata?.moolah_cloud_data);
+          }
+        } catch (onlineErr: any) {
+          // If the error was explicitly invalid credentials, rethrow
+          if (onlineErr.message?.includes('Invalid email or password')) {
+            throw onlineErr;
+          }
+
+          // 2. Offline fallback: Check local cached database
+          console.warn('Supabase online check failed, attempting offline fallback:', onlineErr);
           const userRow = db.getFirstSync<User & { password_hash: string }>(
             'SELECT id, name, email, password_hash, created_at, updated_at FROM users WHERE LOWER(email) = ?',
             email,
           );
 
-          if (userRow) {
-            if (userRow.password_hash === hashedPassword) {
-              const fallbackName = typeof email === 'string' && email.includes('@') ? email.split('@')[0] : 'User';
-              authenticatedUser = {
-                id: userRow.id,
-                name: userRow.name || fallbackName,
-                email: userRow.email,
-                created_at: userRow.created_at,
-                updated_at: userRow.updated_at,
-              };
-            } else {
-              throw new Error('Incorrect password. Please try again.');
-            }
-          }
-        } catch (dbErr: any) {
-          if (dbErr.message?.includes('Incorrect password')) throw dbErr;
-          console.warn('Local db lookup notice:', dbErr);
-        }
-
-        // 2. If not found in local DB (e.g. brand new browser/device), check Supabase to restore account
-        if (!authenticatedUser) {
-          try {
-            const { data: supaData, error: supaErr } = await supabase.auth.signInWithPassword({
-              email,
-              password: passwordInput,
-            });
-
-            if (!supaErr && supaData?.user) {
-              const supaUser = supaData.user;
-              const fallbackName = typeof email === 'string' && email.includes('@') ? email.split('@')[0] : 'User';
-              authenticatedUser = {
-                id: supaUser.id,
-                name: supaUser.user_metadata?.name || fallbackName,
-                email: supaUser.email || email,
-                created_at: supaUser.created_at,
-              };
-
-              // Cache user in local database so future logins are instant
-              try {
-                db.runSync(
-                  'INSERT INTO users (id, name, email, password_hash) VALUES (?, ?, ?, ?)',
-                  authenticatedUser.id,
-                  authenticatedUser.name,
-                  authenticatedUser.email,
-                  hashedPassword,
-                );
-              } catch {}
-            }
-          } catch (supaErr) {
-            console.warn('Supabase signIn notice:', supaErr);
+          if (userRow && userRow.password_hash === hashedPassword) {
+            const fallbackName = typeof email === 'string' && email.includes('@') ? email.split('@')[0] : 'User';
+            authenticatedUser = {
+              id: userRow.id,
+              name: userRow.name || fallbackName,
+              email: userRow.email,
+              created_at: userRow.created_at,
+              updated_at: userRow.updated_at,
+            };
+          } else {
+            throw onlineErr;
           }
         }
 
         if (!authenticatedUser) {
           throw new Error('No account found with this email. Please check your credentials or create an account.');
         }
-
-        // Keep Supabase session active in background
-        (async () => {
-          try {
-            await supabase.auth.signInWithPassword({ email, password: passwordInput });
-          } catch {}
-        })();
 
         login(authenticatedUser, remember);
         return { success: true, user: authenticatedUser };
@@ -137,7 +140,7 @@ export function useAuth() {
     [hashPassword, login],
   );
 
-  /** Sign Up new user with App Auth (mirrors to Supabase database) */
+  /** Sign Up new user with Supabase (guarantees account in Supabase database) */
   const signUp = useCallback(
     async (nameInput: string, emailInput: string, passwordInput: string, remember: boolean) => {
       setLoading(true);
@@ -154,66 +157,52 @@ export function useAuth() {
           throw new Error('Password must be at least 6 characters.');
         }
 
-        const id = 'user-' + Date.now();
+        // 1. Create account directly in Supabase Database
+        const { data: supaData, error: supaErr } = await supabase.auth.signUp({
+          email,
+          password: passwordInput,
+          options: {
+            data: { name },
+          },
+        });
+
+        if (supaErr) {
+          if (supaErr.message?.toLowerCase().includes('already registered')) {
+            throw new Error('An account with this email already exists in Supabase. Please sign in.');
+          }
+          throw new Error(supaErr.message);
+        }
+
+        if (!supaData?.user) {
+          throw new Error('Failed to create account in Supabase. Please try again.');
+        }
+
+        const supaUser = supaData.user;
         const hashedPassword = await hashPassword(passwordInput);
         const db = getDatabase();
 
-        // 1. Create and store user locally in App Database (App Auth)
-        try {
-          db.execSync(`
-            CREATE TABLE IF NOT EXISTS users (
-              id              TEXT PRIMARY KEY,
-              name            TEXT NOT NULL,
-              email           TEXT UNIQUE NOT NULL,
-              password_hash   TEXT NOT NULL,
-              created_at      TEXT DEFAULT (datetime('now')),
-              updated_at      TEXT DEFAULT (datetime('now'))
-            );
-          `);
-
-          const existing = db.getFirstSync<{ id: string }>(
-            'SELECT id FROM users WHERE LOWER(email) = ?',
-            email,
-          );
-          if (existing) {
-            throw new Error('An account with this email already exists. Please sign in.');
-          }
-
-          db.runSync(
-            'INSERT INTO users (id, name, email, password_hash) VALUES (?, ?, ?, ?)',
-            id,
-            name,
-            email,
-            hashedPassword,
-          );
-        } catch (sqliteErr: any) {
-          if (sqliteErr.message?.includes('already exists')) throw sqliteErr;
-        }
-
         const newUser: User = {
-          id,
-          name,
-          email,
-          created_at: new Date().toISOString(),
+          id: supaUser.id,
+          name: supaUser.user_metadata?.name || name,
+          email: supaUser.email || email,
+          created_at: supaUser.created_at,
         };
 
-        // Instant login to app
+        // 2. Cache user in local database
+        try {
+          db.runSync(
+            'INSERT OR REPLACE INTO users (id, name, email, password_hash) VALUES (?, ?, ?, ?)',
+            newUser.id,
+            newUser.name,
+            newUser.email,
+            hashedPassword,
+          );
+        } catch {}
+
         login(newUser, remember);
 
-        // 2. Fire-and-forget sync to Supabase database (confirmation of email is off)
-        (async () => {
-          try {
-            await supabase.auth.signUp({
-              email,
-              password: passwordInput,
-              options: {
-                data: { name },
-              },
-            });
-          } catch (supaErr: any) {
-            console.warn('Supabase cloud user backup notice:', supaErr?.message || supaErr);
-          }
-        })();
+        // 3. Initialize user data in Supabase cloud
+        syncDataToSupabase(newUser.id);
 
         return { success: true, user: newUser };
       } catch (err: any) {

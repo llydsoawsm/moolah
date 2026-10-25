@@ -21,7 +21,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 
 export default function HistoryScreen() {
   const { colors } = useTheme();
-  const { expenses, deleteExpense } = useExpenses();
+  const { expenses, deleteExpense, truncateExpenses } = useExpenses();
   const router = useRouter();
 
   const [search, setSearch] = useState('');
@@ -74,8 +74,8 @@ export default function HistoryScreen() {
   }, [filtered]);
 
   const handleDelete = useCallback(
-    (id: string, name: string) => {
-      Alert.alert('Delete Record', `Are you sure you want to delete this ${name} transaction?`, [
+    (id: string, name?: string) => {
+      Alert.alert('Delete Record', `Are you sure you want to delete this ${name || 'transaction'}?`, [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete',
@@ -87,14 +87,41 @@ export default function HistoryScreen() {
     [deleteExpense],
   );
 
+  const handleTruncateAll = useCallback(() => {
+    Alert.alert(
+      'Clear All History',
+      'Are you sure you want to delete all transaction history? This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear All',
+          style: 'destructive',
+          onPress: () => truncateExpenses(),
+        },
+      ],
+    );
+  }, [truncateExpenses]);
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Minimalist Top Header */}
       <Animated.View entering={FadeInDown.duration(350)} style={styles.header}>
-        <Text style={[styles.title, { color: colors.text }]}>History</Text>
-        <Text style={[styles.subtitle, { color: colors.textMuted }]}>
-          {filtered.length} transaction{filtered.length !== 1 ? 's' : ''}
-        </Text>
+        <View>
+          <Text style={[styles.title, { color: colors.text }]}>History</Text>
+          <Text style={[styles.subtitle, { color: colors.textMuted }]}>
+            {filtered.length} transaction{filtered.length !== 1 ? 's' : ''}
+          </Text>
+        </View>
+        {allCount > 0 && (
+          <TouchableOpacity
+            style={[styles.clearBtn, { borderColor: colors.border }]}
+            onPress={handleTruncateAll}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="trash-outline" size={13} color={colors.danger} />
+            <Text style={[styles.clearBtnText, { color: colors.danger }]}>Clear All</Text>
+          </TouchableOpacity>
+        )}
       </Animated.View>
 
       {/* Minimalist Search Bar */}
@@ -214,7 +241,7 @@ export default function HistoryScreen() {
               {/* Date Header */}
               <View style={styles.dateHeader}>
                 <Text style={[styles.dateLabel, { color: colors.textMuted }]}>
-                  {group.label.toUpperCase()}
+                  {(group.label || 'Recent').toUpperCase()}
                 </Text>
                 <Text
                   style={[
@@ -320,6 +347,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 54,
     paddingBottom: 4,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  clearBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    gap: 5,
+  },
+  clearBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   title: {
     fontSize: 26,
