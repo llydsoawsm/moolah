@@ -197,34 +197,23 @@ export const useAppStore = create<AppState>((set, get) => ({
       const rememberMe = prefs.remember_me !== 'false';
       let currentUser: User | null = null;
 
-      // 1. Check active Supabase session
-      try {
-        const { data: supaSession } = await supabase.auth.getSession();
-        if (supaSession?.session?.user) {
-          const supaUser = supaSession.session.user;
-          currentUser = {
-            id: supaUser.id,
-            name: supaUser.user_metadata?.name || supaUser.email?.split('@')[0] || 'User',
-            email: supaUser.email || '',
-            created_at: supaUser.created_at,
-          };
-        }
-      } catch (e) {
-        console.warn('Supabase getSession notice:', e);
-      }
-
-      // 2. Check UniversalStorage (PWA / Web localStorage persistent across restarts)
-      if (!currentUser && rememberMe) {
+      // 1. Check UniversalStorage (PWA / Web localStorage persistent across restarts)
+      if (rememberMe) {
         try {
           const stored = await UniversalStorage.getItem('moolah_current_user');
           const storedRem = await UniversalStorage.getItem('moolah_remember_me');
           if (stored && storedRem !== 'false') {
-            currentUser = JSON.parse(stored);
+            const parsed = JSON.parse(stored);
+            if (parsed && parsed.id && parsed.email) {
+              currentUser = parsed;
+            }
           }
-        } catch {}
+        } catch (e) {
+          console.warn('UniversalStorage user restore notice:', e);
+        }
       }
 
-      // 3. Fallback to DB query
+      // 2. Check Database query if not found in UniversalStorage
       if (!currentUser && rememberMe && prefs.current_user_id) {
         try {
           const userRow = db.getFirstSync<User>(
@@ -235,6 +224,29 @@ export const useAppStore = create<AppState>((set, get) => ({
             currentUser = userRow;
           }
         } catch {}
+      }
+
+      // 3. Fallback: check Supabase session if app auth has no local user stored yet
+      if (!currentUser && rememberMe) {
+        try {
+          const { data: supaSession } = await supabase.auth.getSession();
+          if (supaSession?.session?.user) {
+            const supaUser = supaSession.session.user;
+            const emailStr = supaUser.email || '';
+            const fallbackName =
+              typeof emailStr === 'string' && emailStr.includes('@')
+                ? emailStr.split('@')[0]
+                : 'User';
+            currentUser = {
+              id: supaUser.id,
+              name: supaUser.user_metadata?.name || fallbackName,
+              email: emailStr,
+              created_at: supaUser.created_at,
+            };
+          }
+        } catch (e) {
+          console.warn('Supabase getSession notice:', e);
+        }
       }
 
       set({

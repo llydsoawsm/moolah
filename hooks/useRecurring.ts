@@ -59,7 +59,13 @@ export function useRecurring() {
     return subscriptions
       .filter((s) => s.is_active === 1)
       .map((sub) => {
-        const dueDate = parseISO(sub.next_due_date);
+        let dueDate: Date;
+        try {
+          dueDate = sub.next_due_date ? parseISO(sub.next_due_date) : today;
+          if (isNaN(dueDate.getTime())) dueDate = today;
+        } catch {
+          dueDate = today;
+        }
         const daysLeft = differenceInCalendarDays(dueDate, today);
         let dueLabel = '';
         if (daysLeft < 0) {

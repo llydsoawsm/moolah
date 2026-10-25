@@ -235,6 +235,10 @@ function createWebFallbackDatabase() {
       } else if (upper.startsWith('INSERT') && upper.includes('EXPENSES')) {
         const [id, type, amount, category_id, payment_method_id, note, receipt_image_uri, expense_date] = params;
         const now = new Date().toISOString();
+        const safeDate =
+          expense_date instanceof Date
+            ? expense_date.toISOString().split('T')[0]
+            : (typeof expense_date === 'string' && expense_date ? expense_date.split('T')[0] : now.split('T')[0]);
         store.expenses.unshift({
           id,
           type: type || 'expense',
@@ -243,7 +247,7 @@ function createWebFallbackDatabase() {
           payment_method_id,
           note: note || '',
           receipt_image_uri: receipt_image_uri || null,
-          expense_date: expense_date || now.split('T')[0],
+          expense_date: safeDate,
           created_at: now,
           updated_at: now,
         });
@@ -349,8 +353,9 @@ function createWebFallbackDatabase() {
           const pm = store.payment_methods.find((p) => p.id === found.payment_method_id);
           return ({
             ...found,
+            expense_date: found.expense_date || new Date().toISOString().split('T')[0],
             category_name: cat?.name || 'Uncategorized',
-            category_icon: cat?.icon || 'folder',
+            category_icon: cat?.icon || 'pricetag-outline',
             category_color: cat?.color || '#999',
             payment_method_name: pm?.name || 'Cash',
           } as unknown as T);
@@ -421,8 +426,9 @@ function createWebFallbackDatabase() {
           const pm = store.payment_methods.find((p) => p.id === e.payment_method_id);
           return {
             ...e,
+            expense_date: e.expense_date || new Date().toISOString().split('T')[0],
             category_name: cat?.name || 'Uncategorized',
-            category_icon: cat?.icon || 'folder',
+            category_icon: cat?.icon || 'pricetag-outline',
             category_color: cat?.color || '#999',
             payment_method_name: pm?.name || 'Cash',
           };

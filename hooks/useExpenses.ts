@@ -58,7 +58,7 @@ export function useExpenses(limit?: number, typeFilter: 'all' | 'expense' | 'inc
         const dateStr =
           data.expense_date instanceof Date
             ? data.expense_date.toISOString().split('T')[0]
-            : getTodayISO();
+            : (typeof data.expense_date === 'string' && data.expense_date ? data.expense_date.split('T')[0] : getTodayISO());
         const type = data.type || 'expense';
 
         db.runSync(
@@ -120,7 +120,7 @@ export function useExpenses(limit?: number, typeFilter: 'all' | 'expense' | 'inc
           values.push(
             data.expense_date instanceof Date
               ? data.expense_date.toISOString().split('T')[0]
-              : data.expense_date,
+              : (typeof data.expense_date === 'string' && data.expense_date ? data.expense_date.split('T')[0] : getTodayISO()),
           );
         }
 

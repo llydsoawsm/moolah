@@ -38,7 +38,7 @@ export function useAuth() {
     }
   }, []);
 
-  /** Sign In with Supabase & Local Database */
+  /** Sign In with App Auth (with Supabase cloud restore) */
   const signIn = useCallback(
     async (emailInput: string, passwordInput: string, remember: boolean) => {
       setLoading(true);
@@ -50,30 +50,11 @@ export function useAuth() {
         }
 
         let authenticatedUser: User | null = null;
+        const hashedPassword = await hashPassword(passwordInput);
+        const db = getDatabase();
 
-        // 1. Attempt Supabase Auth
+        // 1. Check local App Database FIRST (App Auth)
         try {
-          const { data: supaData, error: supaErr } = await supabase.auth.signInWithPassword({
-            email,
-            password: passwordInput,
-          });
-
-          if (!supaErr && supaData?.user) {
-            authenticatedUser = {
-              id: supaData.user.id,
-              name: supaData.user.user_metadata?.name || email.split('@')[0],
-              email: supaData.user.email || email,
-              created_at: supaData.user.created_at,
-            };
-          }
-        } catch (supaErr) {
-          console.warn('Supabase signIn notice:', supaErr);
-        }
-
-        // 2. Check Database if not authenticated via Supabase
-        if (!authenticatedUser) {
-          const hashedPassword = await hashPassword(passwordInput);
-          const db = getDatabase();
           const userRow = db.getFirstSync<User & { password_hash: string }>(
             'SELECT id, name, email, password_hash, created_at, updated_at FROM users WHERE LOWER(email) = ?',
             email,
@@ -81,9 +62,10 @@ export function useAuth() {
 
           if (userRow) {
             if (userRow.password_hash === hashedPassword) {
+              const fallbackName = typeof email === 'string' && email.includes('@') ? email.split('@')[0] : 'User';
               authenticatedUser = {
                 id: userRow.id,
-                name: userRow.name,
+                name: userRow.name || fallbackName,
                 email: userRow.email,
                 created_at: userRow.created_at,
                 updated_at: userRow.updated_at,
@@ -92,11 +74,55 @@ export function useAuth() {
               throw new Error('Incorrect password. Please try again.');
             }
           }
+        } catch (dbErr: any) {
+          if (dbErr.message?.includes('Incorrect password')) throw dbErr;
+          console.warn('Local db lookup notice:', dbErr);
+        }
+
+        // 2. If not found in local DB (e.g. brand new browser/device), check Supabase to restore account
+        if (!authenticatedUser) {
+          try {
+            const { data: supaData, error: supaErr } = await supabase.auth.signInWithPassword({
+              email,
+              password: passwordInput,
+            });
+
+            if (!supaErr && supaData?.user) {
+              const supaUser = supaData.user;
+              const fallbackName = typeof email === 'string' && email.includes('@') ? email.split('@')[0] : 'User';
+              authenticatedUser = {
+                id: supaUser.id,
+                name: supaUser.user_metadata?.name || fallbackName,
+                email: supaUser.email || email,
+                created_at: supaUser.created_at,
+              };
+
+              // Cache user in local database so future logins are instant
+              try {
+                db.runSync(
+                  'INSERT INTO users (id, name, email, password_hash) VALUES (?, ?, ?, ?)',
+                  authenticatedUser.id,
+                  authenticatedUser.name,
+                  authenticatedUser.email,
+                  hashedPassword,
+                );
+              } catch {}
+            }
+          } catch (supaErr) {
+            console.warn('Supabase signIn notice:', supaErr);
+          }
         }
 
         if (!authenticatedUser) {
-          throw new Error('No account found with this email. Please sign up.');
+          throw new Error('No account found with this email. Please check your credentials or create an account.');
         }
+
+        // Keep Supabase session active in background
+        (async () => {
+          try {
+            await supabase.auth.signInWithPassword({ email, password: passwordInput });
+          } catch {}
+        })();
 
         login(authenticatedUser, remember);
         return { success: true, user: authenticatedUser };
@@ -111,7 +137,7 @@ export function useAuth() {
     [hashPassword, login],
   );
 
-  /** Sign Up new user with Supabase & Local Database */
+  /** Sign Up new user with App Auth (mirrors to Supabase database) */
   const signUp = useCallback(
     async (nameInput: string, emailInput: string, passwordInput: string, remember: boolean) => {
       setLoading(true);
@@ -128,35 +154,11 @@ export function useAuth() {
           throw new Error('Password must be at least 6 characters.');
         }
 
-        // 1. Supabase Auth registration
-        let supaUserId: string | null = null;
-        try {
-          const { data: supaData, error: supaErr } = await supabase.auth.signUp({
-            email,
-            password: passwordInput,
-            options: {
-              data: { name },
-            },
-          });
-
-          if (supaErr) {
-            if (supaErr.message.toLowerCase().includes('already registered')) {
-              throw new Error('An account with this email already exists. Please sign in.');
-            }
-            console.warn('Supabase Auth notice:', supaErr.message);
-          } else if (supaData?.user) {
-            supaUserId = supaData.user.id;
-          }
-        } catch (err: any) {
-          if (err.message?.includes('already exists')) throw err;
-          console.warn('Supabase signup notice:', err.message);
-        }
-
-        // 2. Persist user into database
-        const id = supaUserId || 'user-' + Date.now();
+        const id = 'user-' + Date.now();
         const hashedPassword = await hashPassword(passwordInput);
         const db = getDatabase();
 
+        // 1. Create and store user locally in App Database (App Auth)
         try {
           db.execSync(`
             CREATE TABLE IF NOT EXISTS users (
@@ -173,7 +175,7 @@ export function useAuth() {
             'SELECT id FROM users WHERE LOWER(email) = ?',
             email,
           );
-          if (existing && !supaUserId) {
+          if (existing) {
             throw new Error('An account with this email already exists. Please sign in.');
           }
 
@@ -195,7 +197,24 @@ export function useAuth() {
           created_at: new Date().toISOString(),
         };
 
+        // Instant login to app
         login(newUser, remember);
+
+        // 2. Fire-and-forget sync to Supabase database (confirmation of email is off)
+        (async () => {
+          try {
+            await supabase.auth.signUp({
+              email,
+              password: passwordInput,
+              options: {
+                data: { name },
+              },
+            });
+          } catch (supaErr: any) {
+            console.warn('Supabase cloud user backup notice:', supaErr?.message || supaErr);
+          }
+        })();
+
         return { success: true, user: newUser };
       } catch (err: any) {
         const msg = err.message || 'Failed to create account.';

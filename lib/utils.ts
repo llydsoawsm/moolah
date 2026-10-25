@@ -46,19 +46,45 @@ export function formatCurrencyCompact(amount: number, currencyCode?: string): st
 /**
  * Format a date string for display
  */
-export function formatDate(dateStr: string, fmt?: string): string {
-  const date = typeof dateStr === 'string' ? parseISO(dateStr) : dateStr;
-  return format(date, fmt || DATE_FORMATS.display);
+export function formatDate(dateStr?: string | Date | null, fmt?: string): string {
+  if (!dateStr) return '';
+  try {
+    let date: Date;
+    if (dateStr instanceof Date) {
+      date = dateStr;
+    } else if (typeof dateStr === 'string' && dateStr.trim().length > 0) {
+      date = parseISO(dateStr);
+    } else {
+      return '';
+    }
+    if (isNaN(date.getTime())) return typeof dateStr === 'string' ? dateStr : '';
+    return format(date, fmt || DATE_FORMATS.display);
+  } catch {
+    return typeof dateStr === 'string' ? dateStr : '';
+  }
 }
 
 /**
  * Get a friendly date label (Today, Yesterday, or the formatted date)
  */
-export function getDateLabel(dateStr: string): string {
-  const date = parseISO(dateStr);
-  if (isToday(date)) return 'Today';
-  if (isYesterday(date)) return 'Yesterday';
-  return format(date, DATE_FORMATS.display);
+export function getDateLabel(dateStr?: string | Date | null): string {
+  if (!dateStr) return '';
+  try {
+    let date: Date;
+    if (dateStr instanceof Date) {
+      date = dateStr;
+    } else if (typeof dateStr === 'string' && dateStr.trim().length > 0) {
+      date = parseISO(dateStr);
+    } else {
+      return '';
+    }
+    if (isNaN(date.getTime())) return typeof dateStr === 'string' ? dateStr : '';
+    if (isToday(date)) return 'Today';
+    if (isYesterday(date)) return 'Yesterday';
+    return format(date, DATE_FORMATS.display);
+  } catch {
+    return typeof dateStr === 'string' ? dateStr : '';
+  }
 }
 
 /**

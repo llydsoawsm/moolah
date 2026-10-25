@@ -381,18 +381,23 @@ export default function AnalyticsScreen() {
 }
 
 function formatBarLabel(date: string, period: AnalyticsPeriod): string {
-  if (period === 'daily') {
+  if (!date || typeof date !== 'string') return '';
+  try {
+    if (period === 'daily') {
+      const parts = date.split('-');
+      return parts[2] || date;
+    }
+    if (period === 'weekly') {
+      const parts = date.split('-W');
+      return 'W' + (parts[1] || '');
+    }
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const parts = date.split('-');
-    return parts[2] || date;
+    const monthIndex = parseInt(parts[1] || '1', 10) - 1;
+    return monthNames[monthIndex] || date;
+  } catch {
+    return String(date || '');
   }
-  if (period === 'weekly') {
-    const parts = date.split('-W');
-    return 'W' + (parts[1] || '');
-  }
-  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const parts = date.split('-');
-  const monthIndex = parseInt(parts[1], 10) - 1;
-  return monthNames[monthIndex] || date;
 }
 
 const styles = StyleSheet.create({
