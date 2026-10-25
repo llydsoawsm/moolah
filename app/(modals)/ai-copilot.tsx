@@ -20,6 +20,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../hooks/useTheme';
 import { useAppStore } from '../../stores/app-store';
 import { sendCopilotMessage, type ChatMessage } from '../../lib/ai/gemini-client';
@@ -53,6 +54,8 @@ const QUICK_PROMPTS = [
 
 export default function AICopilotModal() {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
+  const topPadding = Math.max(insets.top, Platform.OS === 'ios' ? 52 : 24);
   // Ensure optimal contrast for text/icons on top of colors.primary across themes
   const isLightPrimary = colors.primary.toLowerCase() === '#fafafa' || colors.statusBar === 'light';
   const primaryTextColor = isLightPrimary ? '#09090B' : '#FFFFFF';
@@ -274,7 +277,7 @@ export default function AICopilotModal() {
       keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
     >
       {/* Header */}
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+      <View style={[styles.header, { borderBottomColor: colors.border, paddingTop: topPadding }]}>
         <View style={styles.headerLeft}>
           <View style={[styles.iconBadge, { backgroundColor: colors.primary + '20' }]}>
             <Ionicons name="sparkles" size={20} color={colors.primary} />
@@ -747,7 +750,6 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'ios' ? 14 : 16,
     paddingBottom: 14,
     borderBottomWidth: 1,
     flexDirection: 'row',

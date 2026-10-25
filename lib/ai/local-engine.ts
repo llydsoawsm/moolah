@@ -50,6 +50,34 @@ export function processLocalQuery(query: string, lastAction?: CopilotActionPropo
   const lower = clean.toLowerCase();
 
   // ------------------------------------------------------------
+  // Greetings & Copilot Assistant Identity
+  // ------------------------------------------------------------
+  const isGreeting =
+    /^(hello|hi|hey|greetings|kumusta|sup|good\s*(morning|afternoon|evening))\b/i.test(lower) &&
+    !lower.includes('spent') &&
+    !lower.includes('add') &&
+    !lower.includes('log') &&
+    !lower.includes('budget') &&
+    !lower.includes('subscription');
+
+  if (isGreeting) {
+    return {
+      engine: 'local',
+      text: "👋 Hi there! I'm your Moolah Copilot. How can I assist you with your finances today? You can ask me to log an expense, set a budget, check your net balance, or analyze your spending.",
+    };
+  }
+
+  const isCapabilitiesQuery =
+    /^(what can you do|help|who are you|features|how to use)\b/i.test(lower);
+
+  if (isCapabilitiesQuery) {
+    return {
+      engine: 'local',
+      text: "I am your Moolah Copilot! Here is what I can do:\n\n• **Log Transactions:** *\"Spent 450 for lunch GCash\"* or *\"Received 30000 salary\"*\n• **Set Budgets:** *\"Set budget for Food to 5000\"*\n• **Add Recurring Bills:** *\"Add subscription Netflix 549 on day 15\"*\n• **Manage Ledger:** *\"Delete last expense\"* or *\"Cancel subscription Netflix\"*\n• **Financial Coaching:** *\"Review my financial health\"* or *\"What is my balance?\"*",
+    };
+  }
+
+  // ------------------------------------------------------------
   // 0. Contextual Modification of Previous Action Proposal
   // Examples:
   // "change it to 449/ month of 18"
@@ -357,21 +385,27 @@ export function processLocalQuery(query: string, lastAction?: CopilotActionPropo
   // 5. Targeted Query Answering (Biggest expense, balance, savings)
   // ------------------------------------------------------------
   const health = executeGetFinancialHealth();
-  const savingsRate = health.savingsRate;
-  const net = health.net;
+  const savingsRate = Number(health?.savingsRate) || 0;
+  const net = Number(health?.net) || 0;
+  const income = Number(health?.income) || 0;
+  const expenses = Number(health?.expenses) || 0;
+  const burnRate = Number(health?.burnRatePerDay) || 0;
+  const projectedEnd = Number(health?.projectedMonthEndBalance) || 0;
+  const daysLeft = Number(health?.daysRemainingInMonth) || 1;
 
   // 5a. Biggest / Top Expense Query
   if (/\b(biggest|highest|most|top|largest)\s*(expense|spending|cost|spend)?\b/i.test(lower) || lower.includes('what is my biggest')) {
-    if (health.topCategories.length > 0) {
+    if (health?.topCategories && health.topCategories.length > 0) {
       const top = health.topCategories[0];
+      const topAmt = Number(top.amount) || 0;
       return {
         engine: 'local',
-        text: `Your biggest expense this month is **${top.name}** at **₱${top.amount.toLocaleString()}** (${top.percentage}% of total spending).`,
+        text: `Your biggest expense this month is **${top.name}** at **₱${topAmt.toLocaleString()}** (${top.percentage || 0}% of total spending).`,
       };
     } else {
       return {
         engine: 'local',
-        text: `No expenses recorded for ${health.month} yet.`,
+        text: `No expenses recorded for ${health?.month || 'this month'} yet.`,
       };
     }
   }
@@ -380,7 +414,7 @@ export function processLocalQuery(query: string, lastAction?: CopilotActionPropo
   if (/\b(balance|net|how much (money )?do i have|remaining)\b/i.test(lower) && !lower.includes('budget')) {
     return {
       engine: 'local',
-      text: `Your net balance for this month is **${net >= 0 ? '+' : ''}₱${net.toLocaleString()}** (Income: ₱${health.income.toLocaleString()}, Expenses: ₱${health.expenses.toLocaleString()}).`,
+      text: `Your net balance for this month is **${net >= 0 ? '+' : ''}₱${net.toLocaleString()}** (Income: ₱${income.toLocaleString()}, Expenses: ₱${expenses.toLocaleString()}).`,
     };
   }
 
@@ -388,24 +422,24 @@ export function processLocalQuery(query: string, lastAction?: CopilotActionPropo
   if (/\b(burn rate|per day|daily spend|daily burn)\b/i.test(lower)) {
     return {
       engine: 'local',
-      text: `Your average daily burn rate is **₱${health.burnRatePerDay.toLocaleString()}/day** with ${health.daysRemainingInMonth} days remaining this month.`,
+      text: `Your average daily burn rate is **₱${burnRate.toLocaleString()}/day** with ${daysLeft} days remaining this month.`,
     };
   }
 
   // 5d. General Financial Health & 50/30/20 Coaching
   let advice = '';
-  if (health.income === 0 && health.expenses === 0) {
-    advice = `No transactions recorded for ${health.month} yet.\n\n**50/30/20 Guideline:**\n• 50% Needs\n• 30% Wants\n• 20% Savings`;
+  if (income === 0 && expenses === 0) {
+    advice = `No transactions recorded for ${health?.month || 'this month'} yet.\n\n**50/30/20 Guideline:**\n• 50% Needs\n• 30% Wants\n• 20% Savings`;
   } else {
-    advice = `### Financial Health (${health.month})\n` +
-      `• **Income:** ₱${health.income.toLocaleString()} | **Expenses:** ₱${health.expenses.toLocaleString()}\n` +
+    advice = `### Financial Health (${health?.month || 'This Month'})\n` +
+      `• **Income:** ₱${income.toLocaleString()} | **Expenses:** ₱${expenses.toLocaleString()}\n` +
       `• **Net:** ${net >= 0 ? '+' : ''}₱${net.toLocaleString()} (${savingsRate}% savings rate)\n` +
-      `• **Daily Burn:** ~₱${health.burnRatePerDay.toLocaleString()}/day (${health.daysRemainingInMonth}d left)\n` +
-      `• **Projected End:** ₱${health.projectedMonthEndBalance.toLocaleString()}\n\n`;
+      `• **Daily Burn:** ~₱${burnRate.toLocaleString()}/day (${daysLeft}d left)\n` +
+      `• **Projected End:** ₱${projectedEnd.toLocaleString()}\n\n`;
 
-    if (health.topCategories.length > 0) {
+    if (health?.topCategories && health.topCategories.length > 0) {
       advice += `**Top Spend:** ` +
-        health.topCategories.slice(0, 3).map((c) => `${c.name} (₱${c.amount.toLocaleString()})`).join(', ') +
+        health.topCategories.slice(0, 3).map((c) => `${c.name} (₱${(Number(c.amount) || 0).toLocaleString()})`).join(', ') +
         `\n\n`;
     }
 

@@ -380,65 +380,88 @@ export function executeCopilotAction(action: { type: string; payload: any }): st
  * Gather real SQLite data to compute financial health & 50/30/20 breakdown
  */
 export function executeGetFinancialHealth(): FinancialHealthResult {
-  const db = getDatabase();
   const now = new Date();
   const monthStr = format(now, 'yyyy-MM');
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   const currentDay = now.getDate();
   const daysRemaining = Math.max(1, daysInMonth - currentDay);
 
-  // Income this month
-  const incRow = db.getFirstSync<{ total: number }>(
-    `SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE type = 'income' AND strftime('%Y-%m', expense_date) = ?`,
-    monthStr,
-  );
-  const income = incRow ? incRow.total : 0;
+  let income = 0;
+  let expenses = 0;
+  let topCategories: { name: string; amount: number; percentage: number }[] = [];
+  let budgetAdherence: { category: string; spent: number; limit: number; status: 'On Track' | 'Near Limit' | 'Exceeded' }[] = [];
 
-  // Expenses this month
-  const expRow = db.getFirstSync<{ total: number }>(
-    `SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE type = 'expense' AND strftime('%Y-%m', expense_date) = ?`,
-    monthStr,
-  );
-  const expenses = expRow ? expRow.total : 0;
+  try {
+    const db = getDatabase();
+
+    // Income this month
+    const incRow = db.getFirstSync<{ total?: number; income?: number }>(
+      `SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE type = 'income' AND strftime('%Y-%m', expense_date) = ?`,
+      monthStr,
+    );
+    income = Number(incRow?.total ?? incRow?.income ?? 0);
+    if (!Number.isFinite(income)) income = 0;
+
+    // Expenses this month
+    const expRow = db.getFirstSync<{ total?: number; expense?: number }>(
+      `SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE type = 'expense' AND strftime('%Y-%m', expense_date) = ?`,
+      monthStr,
+    );
+    expenses = Number(expRow?.total ?? expRow?.expense ?? 0);
+    if (!Number.isFinite(expenses)) expenses = 0;
+
+    // Top category spending
+    const topRows = db.getAllSync<{ name?: string; category_name?: string; total?: number }>(
+      `SELECT c.name, SUM(e.amount) as total 
+       FROM expenses e 
+       JOIN categories c ON e.category_id = c.id 
+       WHERE e.type = 'expense' AND strftime('%Y-%m', e.expense_date) = ?
+       GROUP BY c.id 
+       ORDER BY total DESC 
+       LIMIT 5`,
+      monthStr,
+    );
+    if (Array.isArray(topRows)) {
+      topCategories = topRows.map((r) => {
+        const catName = r.name || r.category_name || 'General';
+        const total = Number(r.total) || 0;
+        return {
+          name: catName,
+          amount: total,
+          percentage: expenses > 0 ? Math.round((total / expenses) * 100) : 0,
+        };
+      });
+    }
+
+    // Budgets
+    const budgetRows = db.getAllSync<any>(
+      `SELECT c.name as category, b.amount as lim, COALESCE(SUM(e.amount), 0) as spent
+       FROM budgets b
+       JOIN categories c ON b.category_id = c.id
+       LEFT JOIN expenses e ON e.category_id = c.id AND e.type = 'expense' AND strftime('%Y-%m', e.expense_date) = ?
+       GROUP BY b.id`,
+      monthStr,
+    );
+    if (Array.isArray(budgetRows)) {
+      budgetAdherence = budgetRows.map((b) => {
+        const spent = Number(b.spent) || 0;
+        const lim = Number(b.lim ?? b.amount) || 0;
+        return {
+          category: String(b.category || b.category_name || 'General'),
+          spent,
+          limit: lim,
+          status: spent > lim ? 'Exceeded' : spent >= lim * 0.8 ? 'Near Limit' : 'On Track',
+        };
+      });
+    }
+  } catch (err) {
+    console.warn('[executeGetFinancialHealth] Query error:', err);
+  }
+
   const net = income - expenses;
-  const savingsRate = income > 0 ? Math.round((net / income) * 100) : 0;
-
-  // Top category spending
-  const topRows = db.getAllSync<{ name: string; total: number }>(
-    `SELECT c.name, SUM(e.amount) as total 
-     FROM expenses e 
-     JOIN categories c ON e.category_id = c.id 
-     WHERE e.type = 'expense' AND strftime('%Y-%m', e.expense_date) = ?
-     GROUP BY c.id 
-     ORDER BY total DESC 
-     LIMIT 5`,
-    monthStr,
-  );
-  const topCategories = topRows.map((r) => ({
-    name: r.name,
-    amount: r.total,
-    percentage: expenses > 0 ? Math.round((r.total / expenses) * 100) : 0,
-  }));
-
-  // Burn rate
+  const savingsRate = income > 0 ? Math.max(0, Math.round((net / income) * 100)) : 0;
   const burnRatePerDay = currentDay > 0 ? Math.round(expenses / currentDay) : 0;
   const projectedMonthEndBalance = Math.round(income - (expenses + burnRatePerDay * daysRemaining));
-
-  // Budgets
-  const budgetRows = db.getAllSync<any>(
-    `SELECT c.name as category, b.amount as lim, COALESCE(SUM(e.amount), 0) as spent
-     FROM budgets b
-     JOIN categories c ON b.category_id = c.id
-     LEFT JOIN expenses e ON e.category_id = c.id AND e.type = 'expense' AND strftime('%Y-%m', e.expense_date) = ?
-     GROUP BY b.id`,
-    monthStr,
-  );
-  const budgetAdherence = budgetRows.map((b) => ({
-    category: b.category,
-    spent: b.spent,
-    limit: b.lim,
-    status: b.spent > b.lim ? 'Exceeded' : b.spent >= b.lim * 0.8 ? 'Near Limit' : 'On Track',
-  }));
 
   return {
     month: monthStr,

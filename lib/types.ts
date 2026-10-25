@@ -70,7 +70,7 @@ export interface ExpenseFormData {
   payment_method_id: string | null;
   note: string;
   receipt_image_uri: string | null;
-  expense_date: Date;
+  expense_date: Date | string;
 }
 
 /** Theme names */

@@ -5,7 +5,8 @@
 function decodeKey(b64: string): string {
   try {
     if (typeof atob === 'function') return atob(b64);
-    if (typeof Buffer !== 'undefined') return Buffer.from(b64, 'base64').toString('utf-8');
+    const buf = (globalThis as any).Buffer;
+    if (typeof buf !== 'undefined') return buf.from(b64, 'base64').toString('utf-8');
   } catch {}
   return '';
 }

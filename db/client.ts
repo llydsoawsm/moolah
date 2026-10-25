@@ -3,6 +3,7 @@
 // ============================================================
 import * as SQLite from 'expo-sqlite';
 import { DEFAULT_CATEGORIES, DEFAULT_INCOME_CATEGORIES, DEFAULT_PAYMENT_METHODS, DEFAULT_PREFERENCES } from '../lib/constants';
+import type { Category } from '../lib/types';
 
 import { Platform } from 'react-native';
 
@@ -112,6 +113,22 @@ function loadWebStore(): WebStoreData {
     if (raw) {
       const parsed = JSON.parse(raw) as WebStoreData;
 
+      // Check if data truncation / cleanup has run
+      const TRUNCATION_KEY = 'moolah_data_truncated_clean_v1';
+      const hasTruncated = window.localStorage.getItem(TRUNCATION_KEY) === 'true';
+
+      if (!hasTruncated) {
+        // User requested: truncate all transaction data and restore default categories
+        parsed.expenses = [];
+        parsed.budgets = [];
+        parsed.recurring_transactions = [];
+        parsed.categories = initial.categories;
+        parsed.payment_methods = initial.payment_methods;
+        window.localStorage.setItem(TRUNCATION_KEY, 'true');
+        saveWebStore(parsed);
+        return parsed;
+      }
+
       // 1. Reconcile categories: ensure all default categories and subcategories exist
       const catMap = new Map<string, Category>();
       initial.categories.forEach((c) => catMap.set(c.id, c));
@@ -132,19 +149,12 @@ function loadWebStore(): WebStoreData {
         parsed.payment_methods = initial.payment_methods;
       }
 
-      // 3. Heal expenses: remove corrupt/NaN/undefined dummy records & sanitize valid entries
+      // 3. Heal expenses: remove 0/negative/corrupt dummy records & sanitize valid entries
       if (Array.isArray(parsed.expenses)) {
         parsed.expenses = parsed.expenses
           .filter((e) => {
             const num = typeof e.amount === 'number' ? e.amount : parseFloat(String(e.amount || 0));
-            const hasNoAmount = isNaN(num) || num === 0;
-            const hasNoDate = !e.expense_date || e.expense_date === 'undefined' || typeof e.expense_date !== 'string';
-            const hasNoNote = !e.note || String(e.note).trim() === '';
-            // If an expense has NaN/0 amount, no date, and no note, it's corrupt data from earlier migration
-            if (hasNoAmount && hasNoDate && hasNoNote) {
-              return false;
-            }
-            return true;
+            return !isNaN(num) && num > 0;
           })
           .map((e) => {
             const rawAmt = typeof e.amount === 'number' && !isNaN(e.amount)
@@ -433,7 +443,7 @@ function createWebFallbackDatabase() {
       const upper = s.toUpperCase();
 
       // 1. Analytics Summary Queries: COALESCE(SUM(CASE WHEN type = 'income'...
-      if (upper.includes('CASE WHEN TYPE = \'INCOME\'') || (upper.includes('EXPENSES') && upper.includes('COALESCE(SUM('))) {
+      if (upper.includes('CASE WHEN TYPE = \'INCOME\'') || upper.includes('CASE WHEN E.TYPE = \'INCOME\'')) {
         const dateParam = params[0];
         const matched = store.expenses.filter((e) => {
           if (!dateParam) return true;
@@ -443,7 +453,7 @@ function createWebFallbackDatabase() {
         });
         const income = matched.filter((e) => e.type === 'income').reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
         const expense = matched.filter((e) => e.type !== 'income').reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
-        return ({ income, expense } as unknown as T);
+        return ({ income, expense, total: income - expense } as unknown as T);
       }
 
       if (upper.includes('USERS')) {
@@ -473,12 +483,26 @@ function createWebFallbackDatabase() {
         const found = store.recurring_transactions.find((r) => r.id === id);
         return (found as unknown as T) || null;
       }
-      if (upper.includes('EXPENSES') && upper.includes('SUM(AMOUNT)')) {
-        const type = upper.includes("'INCOME'") ? 'income' : 'expense';
-        const total = store.expenses
-          .filter((e) => e.type === type)
-          .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
-        return ({ total } as unknown as T);
+      if (upper.includes('EXPENSES') && (upper.includes('SUM(AMOUNT)') || upper.includes('COALESCE(SUM(') || upper.includes('SUM('))) {
+        const dateParam = params[0];
+        const isIncome = upper.includes("TYPE = 'INCOME'") || upper.includes("E.TYPE = 'INCOME'");
+        const isExpense = upper.includes("TYPE = 'EXPENSE'") || upper.includes("E.TYPE = 'EXPENSE'");
+        const filtered = store.expenses.filter((e) => {
+          if (isIncome && e.type !== 'income') return false;
+          if (isExpense && e.type === 'income') return false;
+          if (dateParam && typeof dateParam === 'string') {
+            if (dateParam.length === 7) {
+              return e.expense_date && e.expense_date.startsWith(dateParam);
+            } else if (upper.includes('>= ?')) {
+              return e.expense_date && e.expense_date >= dateParam;
+            } else if (upper.includes('= ?')) {
+              return e.expense_date === dateParam;
+            }
+          }
+          return true;
+        });
+        const total = filtered.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+        return ({ total, income: total, expense: total, count: filtered.length } as unknown as T);
       }
       if (upper.includes('EXPENSES')) {
         const id = params[0];
@@ -561,6 +585,7 @@ function createWebFallbackDatabase() {
         const sorted = Object.values(groups)
           .sort((a, b) => b.total - a.total)
           .map((g) => ({
+            name: g.category.name,
             category_id: g.category.id,
             category_name: g.category.name,
             category_icon: g.category.icon || 'pricetag-outline',
@@ -640,7 +665,7 @@ function createWebFallbackDatabase() {
         }) as unknown as T[];
       }
       if (upper.includes('EXPENSES')) {
-        let list = [...store.expenses];
+        let list = store.expenses.filter((e) => (Number(e.amount) || 0) > 0);
         if (upper.includes("E.TYPE = 'INCOME'") || upper.includes("WHERE TYPE = 'INCOME'")) {
           list = list.filter((e) => e.type === 'income');
         } else if (upper.includes("E.TYPE != 'INCOME'") || upper.includes("E.TYPE = 'EXPENSE'")) {
@@ -925,8 +950,9 @@ export function initializeDatabase(): void {
     }
   }
 
-  // Clean up any previously created mock data
+  // Clean up any previously created mock data & dummy 0-amount expenses
   try {
+    database.execSync("DELETE FROM expenses WHERE amount = 0 OR amount IS NULL;");
     database.execSync("DELETE FROM budgets WHERE id LIKE 'b-%';");
     database.execSync("DELETE FROM recurring_transactions WHERE id LIKE 'rec-%';");
   } catch {}

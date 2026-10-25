@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   Image,
   Alert,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -19,9 +20,12 @@ import { useExpenses } from '../../hooks/useExpenses';
 import { formatCurrency, getDateLabel, formatDate } from '../../lib/utils';
 import type { ExpenseWithDetails } from '../../lib/types';
 import Animated, { FadeInDown } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function ExpenseDetailModal() {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
+  const topPadding = Math.max(insets.top, Platform.OS === 'ios' ? 52 : 24);
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { deleteExpense } = useExpenses();
@@ -80,7 +84,7 @@ export default function ExpenseDetailModal() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.scrollContent, { paddingTop: topPadding }]}>
         {/* Navigation Bar */}
         <Animated.View entering={FadeInDown.duration(300)} style={styles.header}>
           <TouchableOpacity

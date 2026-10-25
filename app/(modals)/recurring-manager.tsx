@@ -11,6 +11,7 @@ import {
   TextInput,
   Alert,
   Modal,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -21,9 +22,12 @@ import { useCategories } from '../../hooks/useCategories';
 import { usePaymentMethods } from '../../hooks/usePaymentMethods';
 import { formatCurrency } from '../../lib/utils';
 import Animated, { FadeInDown } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function RecurringManagerModal() {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
+  const topPadding = Math.max(insets.top, Platform.OS === 'ios' ? 52 : 24);
   const router = useRouter();
   const { subscriptions, upcoming, monthlyTotal, markAsPaid, addSubscription, deleteSubscription } = useRecurring();
   const { categories } = useCategories('expense');
@@ -95,7 +99,7 @@ export default function RecurringManagerModal() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Top Header */}
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+      <View style={[styles.header, { borderBottomColor: colors.border, paddingTop: topPadding }]}>
         <View>
           <Text style={[styles.title, { color: colors.text }]}>Subscriptions & Bills</Text>
           <Text style={[styles.subtitle, { color: colors.textMuted }]}>
@@ -371,7 +375,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 18,
     paddingBottom: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },

@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   TextInput,
   Alert,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -18,9 +19,12 @@ import { useTheme } from '../../hooks/useTheme';
 import { useCategories } from '../../hooks/useCategories';
 import type { TransactionType } from '../../lib/types';
 import Animated, { FadeInDown } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function CategoryPickerModal() {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
+  const topPadding = Math.max(insets.top, Platform.OS === 'ios' ? 52 : 24);
   const router = useRouter();
   const [typeTab, setTypeTab] = useState<TransactionType>('expense');
   const { categories, addCategory } = useCategories(typeTab);
@@ -106,7 +110,7 @@ export default function CategoryPickerModal() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+      <View style={[styles.header, { borderBottomColor: colors.border, paddingTop: topPadding }]}>
         <TouchableOpacity
           onPress={() => router.back()}
           style={[styles.headerBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
@@ -369,7 +373,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 18,
-    paddingTop: 18,
     paddingBottom: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },

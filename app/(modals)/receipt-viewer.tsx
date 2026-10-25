@@ -5,17 +5,19 @@ import React from 'react';
 import { View, Image, StyleSheet, TouchableOpacity, Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../hooks/useTheme';
 
 export default function ReceiptViewerModal() {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const { uri } = useLocalSearchParams<{ uri: string }>();
 
   return (
     <View style={[styles.container, { backgroundColor: '#000000' }]}>
       {/* Header Bar */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: Math.max(insets.top, 50) }]}>
         <TouchableOpacity
           onPress={() => router.back()}
           style={styles.closeButton}
