@@ -222,24 +222,43 @@ export const DEFAULT_PREFERENCES: Record<string, string> = {
   first_launch: 'true',
 };
 
-/** Supported currencies */
-export const SUPPORTED_CURRENCIES: Record<string, { symbol: string; name: string }> = {
-  PHP: { symbol: '₱', name: 'Philippine Peso' },
-  USD: { symbol: '$', name: 'US Dollar' },
-  EUR: { symbol: '€', name: 'Euro' },
-  GBP: { symbol: '£', name: 'British Pound' },
-  JPY: { symbol: '¥', name: 'Japanese Yen' },
-  CAD: { symbol: 'CA$', name: 'Canadian Dollar' },
-  AUD: { symbol: 'AU$', name: 'Australian Dollar' },
-  SGD: { symbol: 'S$', name: 'Singapore Dollar' },
-  MYR: { symbol: 'RM', name: 'Malaysian Ringgit' },
-  THB: { symbol: '฿', name: 'Thai Baht' },
-  IDR: { symbol: 'Rp', name: 'Indonesian Rupiah' },
-  VND: { symbol: '₫', name: 'Vietnamese Dong' },
-  KRW: { symbol: '₩', name: 'South Korean Won' },
-  INR: { symbol: '₹', name: 'Indian Rupee' },
-  AED: { symbol: 'AED', name: 'UAE Dirham' },
-  SAR: { symbol: 'SAR', name: 'Saudi Riyal' },
-  HKD: { symbol: 'HK$', name: 'Hong Kong Dollar' },
-  NZD: { symbol: 'NZ$', name: 'New Zealand Dollar' },
+/** Currency settings */
+export const CURRENCY = {
+  symbol: '₱',
+  code: 'PHP',
+  name: 'Philippine Peso',
+  locale: 'en-PH',
+};
+
+/** Date format strings */
+export const DATE_FORMATS = {
+  display: 'MMM d, yyyy',
+  displayShort: 'MMM d',
+  displayFull: 'EEEE, MMMM d, yyyy',
+  iso: 'yyyy-MM-dd',
+  time: 'h:mm a',
+  monthYear: 'MMMM yyyy',
+  dayMonth: 'MMM d',
+};
+
+/** Supported currencies with symbols and locales */
+export const SUPPORTED_CURRENCIES: Record<string, { symbol: string; code: string; name: string; locale: string }> = {
+  PHP: { symbol: '₱', code: 'PHP', name: 'Philippine Peso', locale: 'en-PH' },
+  USD: { symbol: '$', code: 'USD', name: 'US Dollar', locale: 'en-US' },
+  EUR: { symbol: '€', code: 'EUR', name: 'Euro', locale: 'de-DE' },
+  GBP: { symbol: '£', code: 'GBP', name: 'British Pound', locale: 'en-GB' },
+  JPY: { symbol: '¥', code: 'JPY', name: 'Japanese Yen', locale: 'ja-JP' },
+  CAD: { symbol: 'CA$', code: 'CAD', name: 'Canadian Dollar', locale: 'en-CA' },
+  AUD: { symbol: 'AU$', code: 'AUD', name: 'Australian Dollar', locale: 'en-AU' },
+  SGD: { symbol: 'S$', code: 'SGD', name: 'Singapore Dollar', locale: 'en-SG' },
+  MYR: { symbol: 'RM', code: 'MYR', name: 'Malaysian Ringgit', locale: 'ms-MY' },
+  THB: { symbol: '฿', code: 'THB', name: 'Thai Baht', locale: 'th-TH' },
+  IDR: { symbol: 'Rp', code: 'IDR', name: 'Indonesian Rupiah', locale: 'id-ID' },
+  VND: { symbol: '₫', code: 'VND', name: 'Vietnamese Dong', locale: 'vi-VN' },
+  KRW: { symbol: '₩', code: 'KRW', name: 'South Korean Won', locale: 'ko-KR' },
+  INR: { symbol: '₹', code: 'INR', name: 'Indian Rupee', locale: 'en-IN' },
+  AED: { symbol: 'AED', code: 'AED', name: 'UAE Dirham', locale: 'ar-AE' },
+  SAR: { symbol: 'SAR', code: 'SAR', name: 'Saudi Riyal', locale: 'ar-SA' },
+  HKD: { symbol: 'HK$', code: 'HKD', name: 'Hong Kong Dollar', locale: 'zh-HK' },
+  NZD: { symbol: 'NZ$', code: 'NZD', name: 'New Zealand Dollar', locale: 'en-NZ' },
 };

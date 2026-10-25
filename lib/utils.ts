@@ -16,31 +16,40 @@ export function getCurrencyConfig(code?: string) {
 /**
  * Format a number as currency using active or specified currency
  */
-export function formatCurrency(amount: number, currencyCode?: string): string {
-  const curr = getCurrencyConfig(currencyCode);
-  const isNegative = amount < 0;
-  const abs = Math.abs(amount);
-  const formatted = abs.toLocaleString(curr.locale, {
+export function formatCurrency(amount?: number | string | null, currencyCode?: string): string {
+  const num = typeof amount === 'number' && !isNaN(amount)
+    ? amount
+    : (parseFloat(String(amount || 0)) || 0);
+  const curr = getCurrencyConfig(currencyCode) || CURRENCY;
+  const isNegative = num < 0;
+  const abs = Math.abs(num);
+  const symbol = curr?.symbol || '₱';
+  const locale = curr?.locale || 'en-PH';
+  const formatted = abs.toLocaleString(locale, {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
-  return `${isNegative ? '-' : ''}${curr.symbol}${formatted}`;
+  return `${isNegative ? '-' : ''}${symbol}${formatted}`;
 }
 
 /**
  * Format a number as compact currency (e.g., ₱1.2K or $1.2K)
  */
-export function formatCurrencyCompact(amount: number, currencyCode?: string): string {
-  const curr = getCurrencyConfig(currencyCode);
-  const isNegative = amount < 0;
-  const abs = Math.abs(amount);
+export function formatCurrencyCompact(amount?: number | string | null, currencyCode?: string): string {
+  const num = typeof amount === 'number' && !isNaN(amount)
+    ? amount
+    : (parseFloat(String(amount || 0)) || 0);
+  const curr = getCurrencyConfig(currencyCode) || CURRENCY;
+  const isNegative = num < 0;
+  const abs = Math.abs(num);
+  const symbol = curr?.symbol || '₱';
   if (abs >= 1000000) {
-    return `${isNegative ? '-' : ''}${curr.symbol}${(abs / 1000000).toFixed(1)}M`;
+    return `${isNegative ? '-' : ''}${symbol}${(abs / 1000000).toFixed(1)}M`;
   }
   if (abs >= 1000) {
-    return `${isNegative ? '-' : ''}${curr.symbol}${(abs / 1000).toFixed(1)}K`;
+    return `${isNegative ? '-' : ''}${symbol}${(abs / 1000).toFixed(1)}K`;
   }
-  return formatCurrency(amount, currencyCode);
+  return formatCurrency(num, currencyCode);
 }
 
 /**

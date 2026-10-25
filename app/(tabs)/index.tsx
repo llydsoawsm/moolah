@@ -344,10 +344,10 @@ export default function DashboardScreen() {
                     <View style={styles.catDetails}>
                       <View style={styles.catNameRow}>
                         <Text style={[styles.catName, { color: colors.text }]}>
-                          {cat.category_name}
+                          {cat.category_name || 'Category'}
                         </Text>
                         <Text style={[styles.catAmount, { color: colors.text }]}>
-                          {formatCurrency(cat.total)}
+                          {formatCurrency(cat.total || 0)}
                         </Text>
                       </View>
                       <View style={[styles.progressBarTrack, { backgroundColor: colors.surfaceAlt }]}>
@@ -355,8 +355,8 @@ export default function DashboardScreen() {
                           style={[
                             styles.progressBarFill,
                             {
-                              backgroundColor: cat.category_color,
-                              width: `${Math.min(cat.percentage, 100)}%`,
+                              backgroundColor: cat.category_color || colors.primary,
+                              width: `${Math.min(isNaN(cat.percentage) ? 0 : cat.percentage, 100)}%`,
                             },
                           ]}
                         />
@@ -420,10 +420,10 @@ export default function DashboardScreen() {
                     </View>
                     <View style={styles.txInfo}>
                       <Text style={[styles.txName, { color: colors.text }]}>
-                        {expense.category_name}
+                        {expense.category_name || (isIncome ? 'Income' : 'General Expense')}
                       </Text>
                       <Text style={[styles.txDate, { color: colors.textMuted }]}>
-                        {expense.note || getDateLabel(expense.expense_date)}
+                        {expense.note || getDateLabel(expense.expense_date) || 'Recent'}
                       </Text>
                     </View>
                     <Text
@@ -432,7 +432,7 @@ export default function DashboardScreen() {
                         { color: isIncome ? colors.success : colors.text },
                       ]}
                     >
-                      {isIncome ? '+' : '-'}{formatCurrency(expense.amount)}
+                      {isIncome ? '+' : '-'}{formatCurrency(expense.amount || 0)}
                     </Text>
                   </TouchableOpacity>
                 );

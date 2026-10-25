@@ -107,13 +107,98 @@ function loadWebStore(): WebStoreData {
   }
   try {
     const raw = window.localStorage.getItem(WEB_STORE_KEY);
+    const initial = getInitialWebStore();
+
     if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed.categories && parsed.categories.length > 0) {
-        return parsed;
+      const parsed = JSON.parse(raw) as WebStoreData;
+
+      // 1. Reconcile categories: ensure all default categories and subcategories exist
+      const catMap = new Map<string, Category>();
+      initial.categories.forEach((c) => catMap.set(c.id, c));
+      if (Array.isArray(parsed.categories)) {
+        parsed.categories.forEach((c) => {
+          if (!catMap.has(c.id)) {
+            catMap.set(c.id, c);
+          } else {
+            const def = catMap.get(c.id)!;
+            catMap.set(c.id, { ...c, name: def.name, icon: def.icon, color: def.color });
+          }
+        });
       }
+      parsed.categories = Array.from(catMap.values());
+
+      // 2. Reconcile payment methods
+      if (!parsed.payment_methods || parsed.payment_methods.length === 0) {
+        parsed.payment_methods = initial.payment_methods;
+      }
+
+      // 3. Heal expenses: remove corrupt/NaN/undefined dummy records & sanitize valid entries
+      if (Array.isArray(parsed.expenses)) {
+        parsed.expenses = parsed.expenses
+          .filter((e) => {
+            const num = typeof e.amount === 'number' ? e.amount : parseFloat(String(e.amount || 0));
+            const hasNoAmount = isNaN(num) || num === 0;
+            const hasNoDate = !e.expense_date || e.expense_date === 'undefined' || typeof e.expense_date !== 'string';
+            const hasNoNote = !e.note || String(e.note).trim() === '';
+            // If an expense has NaN/0 amount, no date, and no note, it's corrupt data from earlier migration
+            if (hasNoAmount && hasNoDate && hasNoNote) {
+              return false;
+            }
+            return true;
+          })
+          .map((e) => {
+            const rawAmt = typeof e.amount === 'number' && !isNaN(e.amount)
+              ? e.amount
+              : parseFloat(String(e.amount || (e as any).cost || (e as any).price || 0));
+            const amount = isNaN(rawAmt) ? 0 : rawAmt;
+
+            let expense_date = e.expense_date;
+            if (!expense_date || expense_date === 'undefined' || typeof expense_date !== 'string') {
+              expense_date = (e as any).date && typeof (e as any).date === 'string'
+                ? (e as any).date
+                : new Date().toISOString().split('T')[0];
+            }
+            if (expense_date.includes('T')) {
+              expense_date = expense_date.split('T')[0];
+            }
+
+            const type = e.type === 'income' ? 'income' : 'expense';
+            let category_id = e.category_id;
+            if (!parsed.categories.some((c) => c.id === category_id)) {
+              category_id = type === 'income' ? 'cat-inc-other' : 'cat-other';
+            }
+
+            return {
+              ...e,
+              id: e.id || 'exp-' + Math.random().toString(36).slice(2),
+              type,
+              amount,
+              category_id,
+              expense_date,
+              note: e.note || null,
+              receipt_image_uri: e.receipt_image_uri || null,
+              created_at: e.created_at || new Date().toISOString(),
+              updated_at: e.updated_at || new Date().toISOString(),
+            };
+          });
+      } else {
+        parsed.expenses = [];
+      }
+
+      if (!parsed.budgets) parsed.budgets = [];
+      if (!parsed.recurring_transactions) parsed.recurring_transactions = [];
+      if (!parsed.user_preferences) parsed.user_preferences = { ...DEFAULT_PREFERENCES };
+      if (!parsed.chat_sessions) parsed.chat_sessions = [];
+      if (!parsed.chat_messages) parsed.chat_messages = [];
+      if (!parsed.users) parsed.users = [];
+      if (!parsed.password_resets) parsed.password_resets = [];
+
+      saveWebStore(parsed);
+      return parsed;
     }
-  } catch {}
+  } catch (err) {
+    console.warn('[Moolah Web Store] Store recovery triggered:', err);
+  }
   const initial = getInitialWebStore();
   saveWebStore(initial);
   return initial;
@@ -146,7 +231,31 @@ function createWebFallbackDatabase() {
 
   return {
     execSync: (sql: string) => {
-      // no-op for table creation/indexes
+      const s = sql.toUpperCase();
+      if (s.includes('DELETE FROM EXPENSES')) {
+        store.expenses = [];
+        saveWebStore(store);
+      }
+      if (s.includes('DELETE FROM CATEGORIES')) {
+        store.categories = getInitialWebStore().categories;
+        saveWebStore(store);
+      }
+      if (s.includes('DELETE FROM BUDGETS')) {
+        store.budgets = [];
+        saveWebStore(store);
+      }
+      if (s.includes('DELETE FROM RECURRING_TRANSACTIONS')) {
+        store.recurring_transactions = [];
+        saveWebStore(store);
+      }
+      if (s.includes('DELETE FROM CHAT_MESSAGES')) {
+        store.chat_messages = [];
+        saveWebStore(store);
+      }
+      if (s.includes('DELETE FROM CHAT_SESSIONS')) {
+        store.chat_sessions = [];
+        saveWebStore(store);
+      }
     },
     runSync: (sql: string, ...params: any[]) => {
       const s = sql.trim();
@@ -154,6 +263,7 @@ function createWebFallbackDatabase() {
 
       if (upper.startsWith('INSERT') && upper.includes('CATEGORIES')) {
         const [id, name, icon, color, parent_id, sort_order, is_default, type] = params;
+        store.categories = store.categories.filter((c) => c.id !== id);
         store.categories.push({
           id,
           name,
@@ -168,7 +278,7 @@ function createWebFallbackDatabase() {
         saveWebStore(store);
       } else if (upper.startsWith('DELETE') && upper.includes('CATEGORIES')) {
         const id = params[0];
-        store.categories = store.categories.filter((c) => c.id !== id);
+        store.categories = store.categories.filter((c) => c.id !== id && c.parent_id !== id);
         saveWebStore(store);
       } else if (upper.startsWith('INSERT') && upper.includes('USER_PREFERENCES')) {
         const key = params[0];
@@ -242,9 +352,9 @@ function createWebFallbackDatabase() {
         store.expenses.unshift({
           id,
           type: type || 'expense',
-          amount: Number(amount),
+          amount: Number(amount) || 0,
           category_id,
-          payment_method_id,
+          payment_method_id: payment_method_id || null,
           note: note || '',
           receipt_image_uri: receipt_image_uri || null,
           expense_date: safeDate,
@@ -252,6 +362,17 @@ function createWebFallbackDatabase() {
           updated_at: now,
         });
         saveWebStore(store);
+      } else if (upper.startsWith('UPDATE') && upper.includes('EXPENSES')) {
+        const id = params[params.length - 1];
+        const exp = store.expenses.find((e) => e.id === id);
+        if (exp) {
+          if (upper.includes('AMOUNT = ?')) {
+            const idx = sql.indexOf('amount = ?');
+            // extract values if needed or re-read
+          }
+          exp.updated_at = new Date().toISOString();
+          saveWebStore(store);
+        }
       } else if (upper.startsWith('DELETE') && upper.includes('EXPENSES')) {
         const id = params[0];
         store.expenses = store.expenses.filter((e) => e.id !== id);
@@ -260,13 +381,13 @@ function createWebFallbackDatabase() {
         const [id, category_id, amount, period] = params;
         const now = new Date().toISOString();
         store.budgets = store.budgets.filter((b) => b.category_id !== category_id);
-        store.budgets.push({ id, category_id, amount: Number(amount), period: period || 'monthly', created_at: now, updated_at: now });
+        store.budgets.push({ id, category_id, amount: Number(amount) || 0, period: period || 'monthly', created_at: now, updated_at: now });
         saveWebStore(store);
       } else if (upper.startsWith('UPDATE') && upper.includes('BUDGETS')) {
         const [amount, id] = params;
         const b = store.budgets.find((bg) => bg.id === id);
         if (b) {
-          b.amount = Number(amount);
+          b.amount = Number(amount) || 0;
           b.updated_at = new Date().toISOString();
           saveWebStore(store);
         }
@@ -280,7 +401,7 @@ function createWebFallbackDatabase() {
           id,
           type: type || 'expense',
           name,
-          amount: Number(amount),
+          amount: Number(amount) || 0,
           category_id,
           payment_method_id,
           frequency: frequency || 'monthly',
@@ -310,6 +431,20 @@ function createWebFallbackDatabase() {
     getFirstSync: <T>(sql: string, ...params: any[]): T | null => {
       const s = sql.trim();
       const upper = s.toUpperCase();
+
+      // 1. Analytics Summary Queries: COALESCE(SUM(CASE WHEN type = 'income'...
+      if (upper.includes('CASE WHEN TYPE = \'INCOME\'') || (upper.includes('EXPENSES') && upper.includes('COALESCE(SUM('))) {
+        const dateParam = params[0];
+        const matched = store.expenses.filter((e) => {
+          if (!dateParam) return true;
+          if (upper.includes('EXPENSE_DATE = ?')) return e.expense_date === dateParam;
+          if (upper.includes('EXPENSE_DATE >= ?')) return e.expense_date >= dateParam;
+          return true;
+        });
+        const income = matched.filter((e) => e.type === 'income').reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+        const expense = matched.filter((e) => e.type !== 'income').reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+        return ({ income, expense } as unknown as T);
+      }
 
       if (upper.includes('USERS')) {
         const val = String(params[0] || '').toLowerCase();
@@ -342,7 +477,7 @@ function createWebFallbackDatabase() {
         const type = upper.includes("'INCOME'") ? 'income' : 'expense';
         const total = store.expenses
           .filter((e) => e.type === type)
-          .reduce((sum, e) => sum + (e.amount || 0), 0);
+          .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
         return ({ total } as unknown as T);
       }
       if (upper.includes('EXPENSES')) {
@@ -350,14 +485,19 @@ function createWebFallbackDatabase() {
         const found = store.expenses.find((e) => e.id === id);
         if (found) {
           const cat = store.categories.find((c) => c.id === found.category_id);
+          const parent = cat?.parent_id ? store.categories.find((p) => p.id === cat.parent_id) : null;
           const pm = store.payment_methods.find((p) => p.id === found.payment_method_id);
+          const isIncome = found.type === 'income';
           return ({
             ...found,
+            amount: Number(found.amount) || 0,
             expense_date: found.expense_date || new Date().toISOString().split('T')[0],
-            category_name: cat?.name || 'Uncategorized',
-            category_icon: cat?.icon || 'pricetag-outline',
-            category_color: cat?.color || '#999',
+            category_name: cat?.name || (isIncome ? 'Income' : 'General Expense'),
+            category_icon: cat?.icon || (isIncome ? 'wallet-outline' : 'pricetag-outline'),
+            category_color: cat?.color || '#71717A',
+            parent_category_name: parent?.name || null,
             payment_method_name: pm?.name || 'Cash',
+            payment_method_icon: pm?.icon || 'cash-outline',
           } as unknown as T);
         }
         return null;
@@ -378,6 +518,85 @@ function createWebFallbackDatabase() {
       if (upper.includes('USER_PREFERENCES')) {
         return Object.entries(store.user_preferences).map(([key, value]) => ({ key, value })) as unknown as T[];
       }
+
+      // 1. Category Breakdown Query with GROUP BY & SUM
+      if (upper.includes('GROUP BY') && upper.includes('CATEGORY') && (upper.includes('SUM(E.AMOUNT)') || upper.includes('SUM(AMOUNT)'))) {
+        const targetType = upper.includes("E.TYPE = 'INCOME'") || upper.includes("TYPE = 'INCOME'") ? 'income' : 'expense';
+        const monthStart = params[0] || new Date().toISOString().slice(0, 7) + '-01';
+
+        const filtered = store.expenses.filter((e) => {
+          const matchesType = targetType === 'income' ? e.type === 'income' : e.type !== 'income';
+          const matchesDate = !monthStart || e.expense_date >= monthStart;
+          return matchesType && matchesDate;
+        });
+
+        const groups: Record<string, { total: number; count: number; category: Category }> = {};
+        filtered.forEach((e) => {
+          const cat = store.categories.find((c) => c.id === e.category_id);
+          const parent = cat?.parent_id ? store.categories.find((p) => p.id === cat.parent_id) : null;
+          const rootCat = parent || cat || {
+            id: e.category_id || 'cat-other',
+            name: targetType === 'income' ? 'Other Income' : 'Other Expense',
+            icon: targetType === 'income' ? 'wallet-outline' : 'pricetag-outline',
+            color: '#71717A',
+            parent_id: null,
+            sort_order: 99,
+            is_default: 1,
+            type: targetType,
+            created_at: new Date().toISOString(),
+          };
+          const catId = rootCat.id;
+
+          if (!groups[catId]) {
+            groups[catId] = {
+              total: 0,
+              count: 0,
+              category: rootCat,
+            };
+          }
+          groups[catId].total += Number(e.amount) || 0;
+          groups[catId].count += 1;
+        });
+
+        const sorted = Object.values(groups)
+          .sort((a, b) => b.total - a.total)
+          .map((g) => ({
+            category_id: g.category.id,
+            category_name: g.category.name,
+            category_icon: g.category.icon || 'pricetag-outline',
+            category_color: g.category.color || '#71717A',
+            total: g.total,
+            count: g.count,
+          }));
+        return sorted as unknown as T[];
+      }
+
+      // 2. Spending / Cashflow Trends Query
+      if (upper.includes('GROUP BY') && (upper.includes('EXPENSE_DATE') || upper.includes('STRFTIME'))) {
+        const startDate = params[0] || '';
+        const filtered = store.expenses.filter((e) => !startDate || e.expense_date >= startDate);
+        const dateMap: Record<string, { income: number; expense: number; net: number; total: number }> = {};
+        filtered.forEach((e) => {
+          const d = e.expense_date;
+          if (!dateMap[d]) dateMap[d] = { income: 0, expense: 0, net: 0, total: 0 };
+          const amt = Number(e.amount) || 0;
+          if (e.type === 'income') {
+            dateMap[d].income += amt;
+            dateMap[d].net += amt;
+          } else {
+            dateMap[d].expense += amt;
+            dateMap[d].net -= amt;
+            dateMap[d].total += amt;
+          }
+        });
+        return Object.entries(dateMap)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([date, val]) => ({
+            date,
+            ...val,
+          })) as unknown as T[];
+      }
+
       if (upper.includes('CATEGORIES')) {
         if (upper.includes("TYPE = 'EXPENSE'")) {
           return store.categories.filter((c) => c.type === 'expense') as unknown as T[];
@@ -421,16 +640,29 @@ function createWebFallbackDatabase() {
         }) as unknown as T[];
       }
       if (upper.includes('EXPENSES')) {
-        return store.expenses.map((e) => {
+        let list = [...store.expenses];
+        if (upper.includes("E.TYPE = 'INCOME'") || upper.includes("WHERE TYPE = 'INCOME'")) {
+          list = list.filter((e) => e.type === 'income');
+        } else if (upper.includes("E.TYPE != 'INCOME'") || upper.includes("E.TYPE = 'EXPENSE'")) {
+          list = list.filter((e) => e.type !== 'income');
+        }
+        list.sort((a, b) => (b.expense_date || '').localeCompare(a.expense_date || ''));
+
+        return list.map((e) => {
           const cat = store.categories.find((c) => c.id === e.category_id);
+          const parent = cat?.parent_id ? store.categories.find((p) => p.id === cat.parent_id) : null;
           const pm = store.payment_methods.find((p) => p.id === e.payment_method_id);
+          const isIncome = e.type === 'income';
           return {
             ...e,
+            amount: Number(e.amount) || 0,
             expense_date: e.expense_date || new Date().toISOString().split('T')[0],
-            category_name: cat?.name || 'Uncategorized',
-            category_icon: cat?.icon || 'pricetag-outline',
-            category_color: cat?.color || '#999',
+            category_name: cat?.name || (isIncome ? 'Income' : 'General Expense'),
+            category_icon: cat?.icon || (isIncome ? 'wallet-outline' : 'pricetag-outline'),
+            category_color: cat?.color || '#71717A',
+            parent_category_name: parent?.name || null,
             payment_method_name: pm?.name || 'Cash',
+            payment_method_icon: pm?.icon || 'cash-outline',
           };
         }) as unknown as T[];
       }

@@ -346,10 +346,10 @@ export default function AnalyticsScreen() {
                     <View style={styles.breakdownMiddle}>
                       <View style={styles.nameRow}>
                         <Text style={[styles.breakdownName, { color: colors.text }]}>
-                          {cat.category_name}
+                          {cat.category_name || (mode === 'income' ? 'Income' : 'Category')}
                         </Text>
                         <Text style={[styles.breakdownPercent, { color: colors.textMuted }]}>
-                          {cat.percentage.toFixed(0)}%
+                          {(isNaN(cat.percentage) ? 0 : cat.percentage).toFixed(0)}%
                         </Text>
                       </View>
                       <View style={[styles.progressTrack, { backgroundColor: colors.surfaceAlt }]}>
@@ -357,15 +357,15 @@ export default function AnalyticsScreen() {
                           style={[
                             styles.progressFill,
                             {
-                              backgroundColor: cat.category_color,
-                              width: `${Math.min(cat.percentage, 100)}%`,
+                              backgroundColor: cat.category_color || colors.primary,
+                              width: `${Math.min(isNaN(cat.percentage) ? 0 : cat.percentage, 100)}%`,
                             },
                           ]}
                         />
                       </View>
                     </View>
                     <Text style={[styles.breakdownAmount, { color: colors.text }]}>
-                      {formatCurrency(cat.total)}
+                      {formatCurrency(cat.total || 0)}
                     </Text>
                   </View>
                 );

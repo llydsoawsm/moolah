@@ -140,12 +140,12 @@ export default function ExpenseDetailModal() {
               { color: expense.type === 'income' ? colors.success : colors.text },
             ]}
           >
-            {expense.type === 'income' ? '+' : '-'}{formatCurrency(expense.amount)}
+            {expense.type === 'income' ? '+' : '-'}{formatCurrency(expense.amount || 0)}
           </Text>
           <Text style={[styles.heroCategory, { color: colors.textSecondary }]}>
             {expense.parent_category_name
-              ? `${expense.parent_category_name} → ${expense.category_name}`
-              : expense.category_name}
+              ? `${expense.parent_category_name} → ${expense.category_name || 'Category'}`
+              : (expense.category_name || (expense.type === 'income' ? 'Income' : 'General Expense'))}
           </Text>
         </Animated.View>
 

@@ -2,9 +2,26 @@ import { ScrollViewStyleReset } from 'expo-router/html';
 import { type PropsWithChildren } from 'react';
 
 const globalStyles = `
-  /* Ensure iOS Safari never auto-zooms inputs */
-  input, select, textarea {
+  /* Ensure iOS Safari never auto-zooms inputs and never shows blue focus rings */
+  input, select, textarea, button, a {
     font-size: 16px !important;
+    outline: none !important;
+    outline-width: 0 !important;
+    outline-color: transparent !important;
+    -webkit-tap-highlight-color: transparent !important;
+    box-shadow: none !important;
+  }
+  *:focus, *:focus-visible, *:focus-within {
+    outline: none !important;
+    box-shadow: none !important;
+  }
+  input:focus, textarea:focus, select:focus {
+    outline: none !important;
+    outline-style: none !important;
+    outline-width: 0 !important;
+    outline-color: transparent !important;
+    box-shadow: none !important;
+    -webkit-tap-highlight-color: transparent !important;
   }
   html, body, #root {
     width: 100%;

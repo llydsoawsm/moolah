@@ -49,15 +49,23 @@ export default function HistoryScreen() {
 
   // Group by date
   const grouped = useMemo(() => {
-    const groups = groupBy(filtered, (e) => e.expense_date);
+    const todayStr = new Date().toISOString().split('T')[0];
+    const groups = groupBy(filtered, (e) =>
+      e.expense_date && e.expense_date !== 'undefined' ? e.expense_date : todayStr,
+    );
     return Object.entries(groups)
       .sort(([a], [b]) => b.localeCompare(a))
       .map(([date, items]) => {
-        const net = items.reduce((s, e) => s + (e.type === 'income' ? e.amount : -e.amount), 0);
-        const totalAmount = items.reduce((s, e) => s + e.amount, 0);
+        const net = items.reduce(
+          (s, e) => s + (e.type === 'income' ? (Number(e.amount) || 0) : -(Number(e.amount) || 0)),
+          0,
+        );
+        const totalAmount = items.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+        const rawLabel = getDateLabel(date);
+        const label = rawLabel && rawLabel !== 'undefined' ? rawLabel : 'Recent';
         return {
           date,
-          label: getDateLabel(date),
+          label,
           net,
           totalAmount,
           data: items,
@@ -266,7 +274,7 @@ export default function HistoryScreen() {
                       </View>
                       <View style={styles.expenseInfo}>
                         <Text style={[styles.expenseName, { color: colors.text }]}>
-                          {expense.category_name}
+                          {expense.category_name || (isIncome ? 'Income' : 'General Expense')}
                         </Text>
                         <Text style={[styles.expenseMeta, { color: colors.textMuted }]}>
                           {[expense.payment_method_name, expense.note]
