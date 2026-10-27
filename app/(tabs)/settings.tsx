@@ -14,6 +14,7 @@ import {
   Modal,
   Platform,
   KeyboardAvoidingView,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -22,6 +23,7 @@ import * as Haptics from 'expo-haptics';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { useTheme } from '../../hooks/useTheme';
+import { useAuth } from '../../hooks/useAuth';
 import { useAppStore } from '../../stores/app-store';
 import { themes, themeOptions } from '../../lib/theme';
 import { resetDatabase, exportExpensesToCSV, exportAllDataJSON } from '../../db/client';
@@ -62,27 +64,29 @@ export default function SettingsScreen() {
   const [pinConfirm, setPinConfirm] = useState('');
   const [pinStep, setPinStep] = useState<'enter' | 'confirm'>('enter');
 
-  const handleSignOut = () => {
-    if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      const confirmed = window.confirm('Are you sure you want to sign out of Moolah?');
-      if (confirmed) {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        signOut();
-      }
-      return;
-    }
+  // Logout Confirmation Modal
+  const { signOut: authSignOut } = useAuth();
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
-    Alert.alert('Sign Out', 'Are you sure you want to sign out of Moolah?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Sign Out',
-        style: 'destructive',
-        onPress: () => {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          signOut();
-        },
-      },
-    ]);
+  const handleSignOut = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setShowLogoutModal(true);
+  };
+
+  const handleConfirmSignOut = async () => {
+    try {
+      setIsLoggingOut(true);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      await authSignOut();
+      setShowLogoutModal(false);
+    } catch (e) {
+      console.error('Error signing out:', e);
+      signOut();
+      setShowLogoutModal(false);
+    } finally {
+      setIsLoggingOut(false);
+    }
   };
 
   const handleSetPin = () => {
@@ -696,6 +700,26 @@ export default function SettingsScreen() {
           </View>
         </Animated.View>
 
+        {/* Sign Out Option in Settings List */}
+        {currentUser && (
+          <Animated.View entering={FadeInDown.duration(400).delay(300)}>
+            <TouchableOpacity
+              style={[
+                styles.logoutListBtn,
+                { backgroundColor: colors.surface, borderColor: colors.border },
+              ]}
+              onPress={handleSignOut}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.logoutListIconCircle, { backgroundColor: colors.danger + '14' }]}>
+                <Ionicons name="log-out-outline" size={16} color={colors.danger} />
+              </View>
+              <Text style={[styles.logoutListText, { color: colors.danger }]}>Sign Out</Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+            </TouchableOpacity>
+          </Animated.View>
+        )}
+
         {/* About App */}
         <View style={styles.about}>
           <Text style={[styles.aboutApp, { color: colors.textMuted }]}>Moolah 1.0.0</Text>
@@ -837,6 +861,128 @@ export default function SettingsScreen() {
             </View>
           </View>
         </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Custom Designed Logout Confirmation Modal */}
+      <Modal
+        visible={showLogoutModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!isLoggingOut) setShowLogoutModal(false);
+        }}
+      >
+        <View style={styles.logoutModalOverlay}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => {
+              if (!isLoggingOut) setShowLogoutModal(false);
+            }}
+          />
+          <View
+            style={[
+              styles.logoutModalCard,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+              },
+            ]}
+          >
+            <View style={styles.logoutHeaderRow}>
+              <View
+                style={[
+                  styles.logoutIconCircle,
+                  { backgroundColor: colors.danger + '18', borderColor: colors.danger + '35' },
+                ]}
+              >
+                <Ionicons name="log-out-outline" size={22} color={colors.danger} />
+              </View>
+              <TouchableOpacity
+                style={[styles.logoutCloseBtn, { backgroundColor: colors.surfaceAlt }]}
+                onPress={() => setShowLogoutModal(false)}
+                disabled={isLoggingOut}
+                activeOpacity={0.7}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="close" size={16} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={[styles.logoutModalTitle, { color: colors.text }]}>Sign out of Moolah?</Text>
+            <Text style={[styles.logoutModalDesc, { color: colors.textSecondary }]}>
+              Are you sure you want to end your session? You can sign back in anytime with your credentials.
+            </Text>
+
+            {currentUser && (
+              <View
+                style={[
+                  styles.logoutAccountCard,
+                  { backgroundColor: colors.surfaceAlt, borderColor: colors.border },
+                ]}
+              >
+                <View style={[styles.logoutAvatar, { backgroundColor: colors.surface }]}>
+                  <Ionicons name="person" size={15} color={colors.text} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.logoutAccountName, { color: colors.text }]} numberOfLines={1}>
+                    {currentUser.name}
+                  </Text>
+                  <Text style={[styles.logoutAccountEmail, { color: colors.textMuted }]} numberOfLines={1}>
+                    {currentUser.email}
+                  </Text>
+                </View>
+                <View style={[styles.logoutSyncPill, { backgroundColor: colors.success + '18' }]}>
+                  <Ionicons name="cloud-done-outline" size={11} color={colors.success} />
+                  <Text style={[styles.logoutSyncText, { color: colors.success }]}>Saved</Text>
+                </View>
+              </View>
+            )}
+
+            <View style={[styles.logoutSecurityBanner, { backgroundColor: colors.surfaceAlt }]}>
+              <Ionicons name="shield-checkmark-outline" size={14} color={colors.textMuted} />
+              <Text style={[styles.logoutSecurityText, { color: colors.textMuted }]}>
+                Local data and Supabase cloud records remain safely stored.
+              </Text>
+            </View>
+
+            <View style={styles.logoutBtnRow}>
+              <TouchableOpacity
+                style={[
+                  styles.logoutCancelBtn,
+                  { borderColor: colors.border, backgroundColor: colors.surfaceAlt },
+                ]}
+                onPress={() => setShowLogoutModal(false)}
+                activeOpacity={0.7}
+                disabled={isLoggingOut}
+              >
+                <Text style={[styles.logoutCancelText, { color: colors.text }]}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.logoutConfirmBtn,
+                  {
+                    backgroundColor: colors.danger,
+                    opacity: isLoggingOut ? 0.7 : 1,
+                  },
+                ]}
+                onPress={handleConfirmSignOut}
+                activeOpacity={0.8}
+                disabled={isLoggingOut}
+              >
+                {isLoggingOut ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Ionicons name="log-out-outline" size={16} color="#FFFFFF" />
+                    <Text style={styles.logoutConfirmText}>Sign Out</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
     </View>
   );
@@ -1226,5 +1372,158 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
+  },
+  logoutModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  logoutModalCard: {
+    width: '100%',
+    maxWidth: 380,
+    borderRadius: 22,
+    borderWidth: 1,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.3,
+    shadowRadius: 24,
+    elevation: 10,
+  },
+  logoutHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  logoutIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoutCloseBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoutModalTitle: {
+    fontSize: 19,
+    fontWeight: '700',
+    letterSpacing: -0.4,
+    marginBottom: 6,
+  },
+  logoutModalDesc: {
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: 16,
+  },
+  logoutAccountCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 10,
+    gap: 10,
+    marginBottom: 12,
+  },
+  logoutAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoutAccountName: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  logoutAccountEmail: {
+    fontSize: 11,
+    marginTop: 1,
+  },
+  logoutSyncPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  logoutSyncText: {
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  logoutSecurityBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginBottom: 20,
+  },
+  logoutSecurityText: {
+    fontSize: 11,
+    flex: 1,
+    lineHeight: 15,
+  },
+  logoutBtnRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  logoutCancelBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoutCancelText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  logoutConfirmBtn: {
+    flex: 1.25,
+    height: 44,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  logoutConfirmText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  logoutListBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    gap: 12,
+    marginTop: 16,
+  },
+  logoutListIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoutListText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
