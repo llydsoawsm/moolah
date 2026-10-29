@@ -909,9 +909,14 @@ export default function SettingsScreen() {
               </TouchableOpacity>
             </View>
 
-            <Text style={[styles.logoutModalTitle, { color: colors.text }]}>Sign out of Moolah?</Text>
-            <Text style={[styles.logoutModalDesc, { color: colors.textSecondary }]}>
-              Are you sure you want to end your session? You can sign back in anytime with your credentials.
+            <Text style={[styles.logoutModalTitle, { color: colors.text }]}>Sign Out</Text>
+            <Text
+              style={[
+                styles.logoutModalDesc,
+                { color: colors.textSecondary, marginBottom: currentUser ? 14 : 20 },
+              ]}
+            >
+              Are you sure you want to sign out?
             </Text>
 
             {currentUser && (
@@ -932,19 +937,8 @@ export default function SettingsScreen() {
                     {currentUser.email}
                   </Text>
                 </View>
-                <View style={[styles.logoutSyncPill, { backgroundColor: colors.success + '18' }]}>
-                  <Ionicons name="cloud-done-outline" size={11} color={colors.success} />
-                  <Text style={[styles.logoutSyncText, { color: colors.success }]}>Saved</Text>
-                </View>
               </View>
             )}
-
-            <View style={[styles.logoutSecurityBanner, { backgroundColor: colors.surfaceAlt }]}>
-              <Ionicons name="shield-checkmark-outline" size={14} color={colors.textMuted} />
-              <Text style={[styles.logoutSecurityText, { color: colors.textMuted }]}>
-                Local data and Supabase cloud records remain safely stored.
-              </Text>
-            </View>
 
             <View style={styles.logoutBtnRow}>
               <TouchableOpacity
@@ -1431,7 +1425,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: 10,
     gap: 10,
-    marginBottom: 12,
+    marginBottom: 20,
   },
   logoutAvatar: {
     width: 32,
