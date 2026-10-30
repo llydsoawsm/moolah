@@ -135,6 +135,28 @@ CREATE TABLE IF NOT EXISTS public.user_preferences (
   UNIQUE(user_id, key)
 );
 
+-- 8. AI Copilot Chat Sessions Table
+CREATE TABLE IF NOT EXISTS public.chat_sessions (
+  id TEXT PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  title TEXT NOT NULL DEFAULT 'Financial Chat',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 9. AI Copilot Chat Messages Table
+CREATE TABLE IF NOT EXISTS public.chat_messages (
+  id TEXT PRIMARY KEY,
+  session_id TEXT REFERENCES public.chat_sessions(id) ON DELETE CASCADE NOT NULL,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  sender TEXT NOT NULL CHECK (sender IN ('user', 'assistant', 'system')),
+  text TEXT NOT NULL,
+  engine TEXT,
+  action_json TEXT,
+  citations_json TEXT,
+  created_at BIGINT NOT NULL
+);
+
 -- ============================================================
 -- Indexes for High Performance
 -- ============================================================
@@ -144,6 +166,9 @@ CREATE INDEX IF NOT EXISTS idx_budgets_user ON public.budgets(user_id);
 CREATE INDEX IF NOT EXISTS idx_recurring_user ON public.recurring_transactions(user_id);
 CREATE INDEX IF NOT EXISTS idx_categories_user ON public.categories(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_preferences_user ON public.user_preferences(user_id);
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_user ON public.chat_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON public.chat_messages(session_id);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_user ON public.chat_messages(user_id);
 
 -- ============================================================
 -- Row Level Security (RLS) Policies
@@ -155,6 +180,8 @@ ALTER TABLE public.expenses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.budgets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.recurring_transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_preferences ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.chat_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.chat_messages ENABLE ROW LEVEL SECURITY;
 
 -- Payment Methods Policies (Readable by all users)
 DROP POLICY IF EXISTS "Payment methods are viewable by everyone" ON public.payment_methods;
@@ -209,9 +236,31 @@ CREATE POLICY "Users can manage their own preferences"
   USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
 
+-- Chat Sessions Policies
+DROP POLICY IF EXISTS "Users can manage their own chat sessions" ON public.chat_sessions;
+CREATE POLICY "Users can manage their own chat sessions"
+  ON public.chat_sessions FOR ALL
+  TO authenticated
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+-- Chat Messages Policies
+DROP POLICY IF EXISTS "Users can manage their own chat messages" ON public.chat_messages;
+CREATE POLICY "Users can manage their own chat messages"
+  ON public.chat_messages FOR ALL
+  TO authenticated
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
 -- ============================================================
--- Grant Permissions to anon & authenticated roles
+-- Grant Permissions with Principle of Least Privilege
 -- ============================================================
 GRANT USAGE ON SCHEMA public TO anon, authenticated;
-GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated;
-GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated;
+
+-- anon role: Strictly limited to read-only access on public reference tables
+GRANT SELECT ON public.payment_methods TO anon;
+GRANT SELECT ON public.categories TO anon;
+
+-- authenticated role: Full CRUD protected by Row Level Security
+GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO authenticated;

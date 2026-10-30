@@ -248,28 +248,40 @@ function createWebFallbackDatabase() {
       const s = sql.toUpperCase();
       if (s.includes('DELETE FROM EXPENSES')) {
         store.expenses = [];
-        saveWebStore(store);
       }
       if (s.includes('DELETE FROM CATEGORIES')) {
-        store.categories = getInitialWebStore().categories;
-        saveWebStore(store);
+        if (s.includes('IS_DEFAULT = 0') || s.includes("IS_DEFAULT = '0'")) {
+          store.categories = store.categories.filter((c) => c.is_default === 1 || c.is_default === '1');
+        } else {
+          store.categories = getInitialWebStore().categories;
+        }
       }
       if (s.includes('DELETE FROM BUDGETS')) {
         store.budgets = [];
-        saveWebStore(store);
       }
       if (s.includes('DELETE FROM RECURRING_TRANSACTIONS')) {
         store.recurring_transactions = [];
-        saveWebStore(store);
       }
       if (s.includes('DELETE FROM CHAT_MESSAGES')) {
         store.chat_messages = [];
-        saveWebStore(store);
       }
       if (s.includes('DELETE FROM CHAT_SESSIONS')) {
         store.chat_sessions = [];
-        saveWebStore(store);
       }
+      if (s.includes('DELETE FROM PASSWORD_RESETS')) {
+        store.password_resets = [];
+      }
+      if (s.includes('DELETE FROM USER_PREFERENCES')) {
+        if (s.includes('NOT IN')) {
+          const preserved: Record<string, string> = {};
+          if (store.user_preferences['theme']) preserved['theme'] = store.user_preferences['theme'];
+          if (store.user_preferences['currency']) preserved['currency'] = store.user_preferences['currency'];
+          store.user_preferences = preserved;
+        } else {
+          store.user_preferences = { ...DEFAULT_PREFERENCES };
+        }
+      }
+      saveWebStore(store);
     },
     runSync: (sql: string, ...params: any[]) => {
       const s = sql.trim();
@@ -380,9 +392,29 @@ function createWebFallbackDatabase() {
         const id = params[params.length - 1];
         const exp = store.expenses.find((e) => e.id === id);
         if (exp) {
-          if (upper.includes('AMOUNT = ?')) {
-            const idx = sql.indexOf('amount = ?');
-            // extract values if needed or re-read
+          const setClauseMatch = sql.match(/SET\s+(.*?)\s+WHERE/i);
+          if (setClauseMatch) {
+            const setStatements = setClauseMatch[1].split(',').map((part) => part.trim());
+            let paramIdx = 0;
+            for (const stmt of setStatements) {
+              const [colRaw] = stmt.split('=').map((c) => c.trim());
+              const col = colRaw.toLowerCase();
+              if (stmt.includes('?') && paramIdx < params.length - 1) {
+                const val = params[paramIdx++];
+                if (col === 'amount') exp.amount = Number(val) || 0;
+                else if (col === 'type') exp.type = val || 'expense';
+                else if (col === 'category_id') exp.category_id = val;
+                else if (col === 'payment_method_id') exp.payment_method_id = val || null;
+                else if (col === 'note') exp.note = val || null;
+                else if (col === 'receipt_image_uri') exp.receipt_image_uri = val || null;
+                else if (col === 'expense_date') {
+                  exp.expense_date =
+                    val instanceof Date
+                      ? val.toISOString().split('T')[0]
+                      : (typeof val === 'string' && val ? val.split('T')[0] : exp.expense_date);
+                }
+              }
+            }
           }
           exp.updated_at = new Date().toISOString();
           saveWebStore(store);
@@ -1186,3 +1218,28 @@ export function resetDatabase(): void {
   `);
   seedDefaultData(database);
 }
+
+/**
+ * Cleanly wipe all user-specific data on logout or account switch.
+ * Preserves default categories, payment methods, and non-sensitive preferences (theme, currency).
+ */
+export function clearLocalUserData(): void {
+  const database = getDatabase();
+  try {
+    database.execSync(`
+      PRAGMA foreign_keys = OFF;
+      DELETE FROM chat_messages;
+      DELETE FROM chat_sessions;
+      DELETE FROM recurring_transactions;
+      DELETE FROM budgets;
+      DELETE FROM expenses;
+      DELETE FROM password_resets;
+      DELETE FROM categories WHERE is_default = 0 OR is_default = '0';
+      DELETE FROM user_preferences WHERE key NOT IN ('theme', 'currency');
+      PRAGMA foreign_keys = ON;
+    `);
+  } catch (err) {
+    console.warn('[Moolah DB] clearLocalUserData notice:', err);
+  }
+}
+

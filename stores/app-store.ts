@@ -3,11 +3,25 @@
 // ============================================================
 import { create } from 'zustand';
 import { Platform } from 'react-native';
+import * as Crypto from 'expo-crypto';
 import { supabase, UniversalStorage } from '../lib/supabase';
 import type { ThemeName, AnalyticsPeriod, AnalyticsMode, User } from '../lib/types';
-import { getDatabase } from '../db/client';
+import { getDatabase, clearLocalUserData } from '../db/client';
 import { DEFAULT_GEMINI_API_KEY, DEFAULT_GEMINI_MODEL } from '../lib/ai/config';
 import { restoreDataFromSupabase } from '../lib/supabase-sync';
+
+const PIN_SALT = '_moolah_pin_vault_';
+
+export async function hashAppPin(pin: string): Promise<string> {
+  try {
+    return await Crypto.digestStringAsync(
+      Crypto.CryptoDigestAlgorithm.SHA256,
+      pin + PIN_SALT,
+    );
+  } catch {
+    return 'fallback_' + pin;
+  }
+}
 
 interface AppState {
   // User Authentication
@@ -32,6 +46,7 @@ interface AppState {
   setUnlocked: (unlocked: boolean) => void;
   setPinHash: (hash: string) => void;
   setBiometricEnabled: (enabled: boolean) => void;
+  verifyPin: (enteredPin: string) => Promise<boolean>;
 
   // Analytics period & mode
   analyticsPeriod: AnalyticsPeriod;
@@ -84,16 +99,17 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   signOut: () => {
-    set({ currentUser: null, isUnlocked: true });
+    set({ currentUser: null, isUnlocked: true, pinHash: '', biometricEnabled: false });
     try {
-      const db = getDatabase();
-      db.runSync("DELETE FROM user_preferences WHERE key = 'current_user_id'");
+      clearLocalUserData();
     } catch (e) {
-      console.error('Error signing out:', e);
+      console.error('Error wiping local user data on signOut:', e);
     }
     try {
       UniversalStorage.removeItem('moolah_current_user');
+      UniversalStorage.removeItem('moolah_remember_me');
     } catch {}
+    get().triggerRefresh();
   },
 
   setRememberMe: (remember) => {
@@ -150,6 +166,18 @@ export const useAppStore = create<AppState>((set, get) => ({
       );
     } catch {}
   },
+  verifyPin: async (enteredPin: string) => {
+    const current = get().pinHash;
+    if (!current) return true;
+    const hashed = await hashAppPin(enteredPin);
+    if (hashed === current) return true;
+    // Support legacy unhashed PIN comparison and silently auto-upgrade
+    if (enteredPin === current) {
+      get().setPinHash(hashed);
+      return true;
+    }
+    return false;
+  },
 
   // Analytics
   analyticsPeriod: 'monthly',
@@ -170,9 +198,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       db.runSync("INSERT OR REPLACE INTO user_preferences (key, value) VALUES ('gemini_api_key', ?)", key);
     } catch {}
     UniversalStorage.setItem('moolah_gemini_api_key', key).catch(() => {});
-    if (key) {
-      supabase.auth.updateUser({ data: { gemini_api_key: key } }).catch(() => {});
-    }
   },
   geminiModel: DEFAULT_GEMINI_MODEL,
   setGeminiModel: (model) => {

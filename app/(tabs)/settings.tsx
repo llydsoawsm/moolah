@@ -24,7 +24,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { useTheme } from '../../hooks/useTheme';
 import { useAuth } from '../../hooks/useAuth';
-import { useAppStore } from '../../stores/app-store';
+import { useAppStore, hashAppPin } from '../../stores/app-store';
 import { themes, themeOptions } from '../../lib/theme';
 import { resetDatabase, exportExpensesToCSV, exportAllDataJSON } from '../../db/client';
 import { syncDataToSupabase } from '../../lib/supabase-sync';
@@ -89,7 +89,7 @@ export default function SettingsScreen() {
     }
   };
 
-  const handleSetPin = () => {
+  const handleSetPin = async () => {
     if (pinStep === 'enter') {
       if (pinInput.length < 4) {
         Alert.alert('Invalid PIN', 'PIN must be at least 4 digits.');
@@ -105,12 +105,13 @@ export default function SettingsScreen() {
         setPinConfirm('');
         return;
       }
-      setPinHash(pinInput);
+      const hashed = await hashAppPin(pinInput);
+      setPinHash(hashed);
       setShowPinSetup(false);
       setPinInput('');
       setPinConfirm('');
       setPinStep('enter');
-      Alert.alert('PIN Set', 'Your app is protected with a PIN.');
+      Alert.alert('PIN Set', 'Your app is protected with a secure PIN.');
     }
   };
 

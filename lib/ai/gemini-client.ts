@@ -241,12 +241,14 @@ STRICT SCOPE GUARDRAIL:
       try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 25000);
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(currentModel)}:generateContent?key=${encodeURIComponent(effectiveApiKey.trim())}`;
-
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(currentModel)}:generateContent`;
 
         const response = await fetch(url, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': effectiveApiKey.trim(),
+          },
           body: JSON.stringify({
             contents,
             system_instruction: systemInstruction,

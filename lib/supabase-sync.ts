@@ -62,11 +62,7 @@ export async function syncDataToSupabase(userId?: string): Promise<boolean> {
     };
 
     // Layer 1: Sync to user_metadata (Instant guaranteed cloud storage)
-    const currentApiKey = useAppStore.getState().geminiApiKey;
     const metaDataToUpdate: any = { moolah_cloud_data: payload };
-    if (currentApiKey && !currentApiKey.includes('AQ.Ab8RN6')) {
-      metaDataToUpdate.gemini_api_key = currentApiKey;
-    }
     const { error: metaErr } = await supabase.auth.updateUser({
       data: metaDataToUpdate,
     });
@@ -144,10 +140,6 @@ export async function restoreDataFromSupabase(userId?: string, cachedCloudData?:
     if (!cloudData) {
       const { data: userData } = await supabase.auth.getUser();
       cloudData = userData?.user?.user_metadata?.moolah_cloud_data;
-      const cloudApiKey = userData?.user?.user_metadata?.gemini_api_key;
-      if (cloudApiKey && typeof cloudApiKey === 'string' && cloudApiKey.trim() && !cloudApiKey.includes('AQ.Ab8RN6')) {
-        useAppStore.getState().setGeminiApiKey(cloudApiKey.trim());
-      }
     }
 
     const db = getDatabase();
@@ -163,8 +155,10 @@ export async function restoreDataFromSupabase(userId?: string, cachedCloudData?:
 
     const expensesToRestore = postgrestExpenses || cloudData?.expenses || [];
 
+    // Ensure clean state before restoring so no previous user records linger
+    db.execSync('DELETE FROM expenses;');
+
     if (Array.isArray(expensesToRestore) && expensesToRestore.length > 0) {
-      db.execSync('DELETE FROM expenses;');
       for (const e of expensesToRestore) {
         if (!e.amount || Number(e.amount) <= 0) continue;
         if (e.id && String(e.id).startsWith('mock-')) continue;

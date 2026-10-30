@@ -1,9 +1,6 @@
-// ============================================================
-// Moolah — useAuth Hook (Supabase & Persistent Auth)
-// ============================================================
 import { useState, useCallback } from 'react';
 import * as Crypto from 'expo-crypto';
-import { getDatabase } from '../db/client';
+import { getDatabase, clearLocalUserData } from '../db/client';
 import { useAppStore } from '../stores/app-store';
 import { supabase } from '../lib/supabase';
 import { syncDataToSupabase, restoreDataFromSupabase } from '../lib/supabase-sync';
@@ -22,20 +19,14 @@ export function useAuth() {
   const setRememberMe = useAppStore((s) => s.setRememberMe);
 
   /** Helper to hash password with SHA-256 */
-  const hashPassword = useCallback(async (password: string): Promise<string> => {
+  const hashPassword = useCallback(async (password: string, userSalt = ''): Promise<string> => {
     try {
       return await Crypto.digestStringAsync(
         Crypto.CryptoDigestAlgorithm.SHA256,
-        password + SALT,
+        password + SALT + userSalt,
       );
     } catch {
-      let hash = 0;
-      const str = password + SALT;
-      for (let i = 0; i < str.length; i++) {
-        hash = (hash << 5) - hash + str.charCodeAt(i);
-        hash |= 0;
-      }
-      return 'moolah_hash_' + Math.abs(hash).toString(16);
+      return 'moolah_sec_' + password.length + '_' + Date.now();
     }
   }, []);
 
@@ -177,6 +168,9 @@ export function useAuth() {
           throw new Error('Failed to create account in Supabase. Please try again.');
         }
 
+        // Ensure fresh slate to eliminate cross-user data leakage
+        clearLocalUserData();
+
         const supaUser = supaData.user;
         const hashedPassword = await hashPassword(passwordInput);
         const db = getDatabase();
@@ -235,22 +229,25 @@ export function useAuth() {
           throw new Error('Please enter a valid Gmail / email address.');
         }
 
-        // Try Supabase password reset email
+        // Attempt Supabase password reset email
         try {
           await supabase.auth.resetPasswordForEmail(email);
         } catch {}
 
-        const db = getDatabase();
-        const user = db.getFirstSync<User>(
-          'SELECT id, name, email FROM users WHERE LOWER(email) = ?',
-          email,
-        );
+        // Generate cryptographically secure 6-digit verification code
+        let code = '';
+        try {
+          const randomBytes = await Crypto.getRandomBytesAsync(3);
+          const num = ((randomBytes[0] << 16) | (randomBytes[1] << 8) | randomBytes[2]) >>> 0;
+          code = (100000 + (num % 900000)).toString();
+        } catch {
+          code = Math.floor(100000 + Math.random() * 900000).toString();
+        }
 
-        // Generate 6-digit verification code
-        const code = Math.floor(100000 + Math.random() * 900000).toString();
         const id = 'reset-' + Date.now();
         const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
 
+        const db = getDatabase();
         try {
           db.runSync('UPDATE password_resets SET used = 1 WHERE LOWER(email) = ?', email);
           db.runSync(
@@ -303,6 +300,14 @@ export function useAuth() {
           throw new Error('Verification code has expired. Please request a new one.');
         }
 
+        // 1. Update Supabase Auth if session active
+        try {
+          await supabase.auth.updateUser({ password: newPasswordInput });
+        } catch (supaErr) {
+          console.warn('[useAuth] Supabase cloud password update note:', supaErr);
+        }
+
+        // 2. Update local cached credentials
         const hashedPassword = await hashPassword(newPasswordInput);
         try {
           db.runSync(
